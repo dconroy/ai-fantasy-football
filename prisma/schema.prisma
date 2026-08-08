@@ -1,0 +1,39 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model DraftSession {
+  id          String   @id @default(cuid())
+  name        String
+  leagueKey   String?
+  draftSlot   Int
+  stateJson   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PlayerMapping {
+  id             String   @id @default(cuid())
+  sourceName     String
+  sourcePosition String
+  yahooPlayerId  String
+  yahooName      String
+  confirmedAt    DateTime @default(now())
+
+  @@unique([sourceName, sourcePosition])
+}
+
+model DataImport {
+  id          String   @id @default(cuid())
+  source      String
+  fetchedAt   DateTime @default(now())
+  sourceDate  DateTime?
+  playerCount Int
+  checksum    String?
+  payload     String
+}
