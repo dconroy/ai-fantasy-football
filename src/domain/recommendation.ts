@@ -26,6 +26,8 @@ export interface RecommendationOptions {
   readonly topCount?: number;
   readonly weights?: Partial<StrategyWeights>;
   readonly config?: StrategyConfig;
+  /** Player ids that must never appear in recommendations (e.g. avoids). */
+  readonly excludePlayerIds?: readonly string[];
 }
 
 interface FactorInput {
@@ -356,7 +358,10 @@ export function recommendPlayers(
   const config = options.config ?? DEFAULT_STRATEGY_CONFIG;
   const weights: StrategyWeights = { ...config.weights, ...options.weights };
   const drafted = new Set(state.picks.map((pick) => pick.player.id));
-  const available = players.filter((player) => !drafted.has(player.id));
+  const excluded = new Set(options.excludePlayerIds ?? []);
+  const available = players.filter(
+    (player) => !drafted.has(player.id) && !excluded.has(player.id),
+  );
   const currentOverall = state.picks.length + 1;
   const next = nextSelectionForSlot(
     currentOverall,

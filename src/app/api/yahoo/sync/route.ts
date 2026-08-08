@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getValidYahooAccessToken } from "@/adapters/yahoo/oauth";
 import { YahooApi } from "@/adapters/yahoo/yahoo-api";
+import { loadMockSnapshot } from "@/adapters/yahoo/mock-store";
 import { prisma } from "@/persistence/prisma";
 
 export const runtime = "nodejs";
@@ -17,8 +18,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    const token = await getValidYahooAccessToken();
-    const snapshot = await new YahooApi(token).snapshot(leagueKey);
+    const snapshot = leagueKey.startsWith("mock.")
+      ? await loadMockSnapshot(leagueKey)
+      : await new YahooApi(await getValidYahooAccessToken()).snapshot(leagueKey);
+    if (!snapshot) {
+      return NextResponse.json(
+        { error: `No mock draft running for ${leagueKey}` },
+        { status: 404 },
+      );
+    }
     const sequence = snapshot.draftResults.reduce(
       (highest, pick) => Math.max(highest, pick.pick),
       0,

@@ -19,6 +19,28 @@ import {
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
 import { parseChenCsv } from "@/adapters/chen/boris-chen";
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
+import { resolvePlayerIdentity } from "@/domain/identity";
+
+interface RemoteDraftPick {
+  pick: number;
+  round: number;
+  teamKey?: string;
+  playerKey?: string;
+  playerName?: string;
+  playerPosition?: string;
+  playerTeam?: string;
+}
+
+interface SyncSnapshot {
+  draftResults: RemoteDraftPick[];
+  mockOrder?: Array<{
+    id: string;
+    name: string;
+    position: string;
+    team: string;
+  }>;
+  syncedAt: string;
+}
 
 const STORAGE_KEY = "draft-room-2026-v1";
 const POSITIONS: readonly (Position | "ALL")[] = [
@@ -53,6 +75,8 @@ function normalizePersisted(state: Partial<PersistedUiState> | null): PersistedU
     ...initialState,
     ...state,
     mode: state.mode === "live" ? "live" : "mock",
+    pins: Array.isArray(state.pins) ? state.pins : [],
+    avoids: Array.isArray(state.avoids) ? state.avoids : [],
   };
 }
 
@@ -141,7 +165,14 @@ export function DraftAssistant() {
   const [dark, setDark] = useState(false);
   const [yahooConnected, setYahooConnected] = useState(false);
   const [notice, setNotice] = useState("Simulation ready");
+  const [leagueKey, setLeagueKey] = useState("");
+  const [syncIntervalSec, setSyncIntervalSec] = useState(5);
+  const [syncStatus, setSyncStatus] = useState<string>("idle");
   const importRef = useRef<HTMLInputElement>(null);
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     setDark(window.matchMedia("(prefers-color-scheme: dark)").matches);
@@ -206,16 +237,14 @@ export function DraftAssistant() {
     () => availablePlayers(state.draft, state.players),
     [state.draft, state.players],
   );
-  const recommendationPool = useMemo(
-    () => state.players.filter((player) => !state.avoids.includes(player.id)),
-    [state.players, state.avoids],
-  );
+  const avoids = state.avoids ?? [];
   const recommendation = useMemo(
     () =>
-      recommendPlayers(state.draft, recommendationPool, {
+      recommendPlayers(state.draft, state.players, {
         weights: state.weights,
+        excludePlayerIds: avoids,
       }),
-    [state.draft, recommendationPool, state.weights],
+    [state.draft, state.players, state.weights, avoids],
   );
   const myRoster = rosterPicks(state.draft.picks, state.draft.userSlot);
   const tiers = [...new Set(available.map((player) => player.chenTier))]
@@ -228,8 +257,13 @@ export function DraftAssistant() {
       `${player.name} ${player.team}`.toLowerCase().includes(search.toLowerCase()),
     )
     .sort((a, b) => {
-      const pinDelta = Number(state.pins.includes(b.id)) - Number(state.pins.includes(a.id));
+      const avoidDelta =
+        Number(avoids.includes(a.id)) - Number(avoids.includes(b.id));
+      const pinDelta =
+        Number((state.pins ?? []).includes(b.id)) -
+        Number((state.pins ?? []).includes(a.id));
       return (
+        avoidDelta ||
         pinDelta ||
         (a.chenRank ?? Number.MAX_SAFE_INTEGER) -
           (b.chenRank ?? Number.MAX_SAFE_INTEGER)
@@ -239,6 +273,150 @@ export function DraftAssistant() {
   function updateDraft(draft: DraftState, message: string) {
     setState((previous) => ({ ...previous, draft }));
     setNotice(message);
+  }
+
+  function reconcileRemote(snapshot: SyncSnapshot) {
+    const current = stateRef.current;
+    const remote = [...snapshot.draftResults].sort((a, b) => a.pick - b.pick);
+    const nextLocalOverall = current.draft.picks.length + 1;
+    const nextLocalSlot = selectionForOverall(
+      nextLocalOverall,
+      current.draft.teamCount,
+    ).slot;
+    if (remote.length <= current.draft.picks.length) {
+      setSyncStatus(
+        nextLocalSlot === current.draft.userSlot
+          ? `your turn · confirm locally (${current.draft.picks.length} picks)`
+          : `in sync · ${remote.length} picks`,
+      );
+      return;
+    }
+    const mockLookup = new Map(
+      (snapshot.mockOrder ?? []).map((player) => [`mock.p.${player.id}`, player]),
+    );
+    let draft = current.draft;
+    let applied = 0;
+    const unresolved: string[] = [];
+    for (const pick of remote.slice(current.draft.picks.length)) {
+      const nextOverall = draft.picks.length + 1;
+      const nextSlot = selectionForOverall(nextOverall, draft.teamCount).slot;
+      if (nextSlot === draft.userSlot) {
+        unresolved.push(`pick ${nextOverall}: your turn — confirm locally to advance`);
+        break;
+      }
+      const mockPlayer = pick.playerKey ? mockLookup.get(pick.playerKey) : undefined;
+      const query = mockPlayer?.name ?? pick.playerName ?? "";
+      const team = mockPlayer?.team ?? pick.playerTeam;
+      if (!query) {
+        unresolved.push(`pick ${pick.pick}: no player name`);
+        break;
+      }
+      const identity = resolvePlayerIdentity(query, current.players, { team });
+      if (identity.status !== "resolved") {
+        unresolved.push(`pick ${pick.pick}: ${identity.status} for ${query}`);
+        break;
+      }
+      try {
+        draft = makeManualPick(draft, identity.player, {
+          madeAt: snapshot.syncedAt,
+        });
+        applied += 1;
+      } catch (error) {
+        unresolved.push(
+          `pick ${pick.pick}: ${error instanceof Error ? error.message : "failed"}`,
+        );
+        break;
+      }
+    }
+    if (applied > 0) {
+      setState((previous) => ({ ...previous, draft }));
+    }
+    if (unresolved.length) {
+      setSyncStatus(`${remote.length} remote · stopped at ${unresolved[0]}`);
+    } else {
+      setSyncStatus(`in sync · ${remote.length} picks`);
+    }
+  }
+
+  useEffect(() => {
+    if (state.mode !== "live" || syncPaused || !leagueKey.trim()) {
+      setSyncStatus(state.mode === "live" ? "paused" : "idle");
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `/api/yahoo/sync?leagueKey=${encodeURIComponent(leagueKey.trim())}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          if (!cancelled) setSyncStatus(`error · ${body.error ?? response.status}`);
+          return;
+        }
+        const snapshot = (await response.json()) as SyncSnapshot;
+        if (!cancelled) reconcileRemote(snapshot);
+      } catch (error) {
+        if (!cancelled) {
+          setSyncStatus(
+            `error · ${error instanceof Error ? error.message : "network"}`,
+          );
+        }
+      }
+    };
+    void poll();
+    const timer = window.setInterval(poll, Math.max(1000, syncIntervalSec * 1000));
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+    // reconcileRemote intentionally excluded — it reads latest state via ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.mode, syncPaused, leagueKey, syncIntervalSec]);
+
+  async function startMockHarness() {
+    if (state.players.length < 60) {
+      setNotice("Load Chen or import a CSV before starting the mock harness.");
+      return;
+    }
+    const key = `mock.${Math.random().toString(36).slice(2, 8)}`;
+    setNotice("Starting mock draft harness…");
+    const response = await fetch("/api/yahoo/mock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        leagueKey: key,
+        userSlot: state.draft.userSlot,
+        teamCount: state.draft.teamCount,
+        rounds: state.draft.rounds,
+        intervalMs: Math.max(1000, syncIntervalSec * 1000),
+        players: state.players.map((player) => ({
+          id: player.id,
+          name: player.name,
+          position: player.position,
+          team: player.team,
+          chenRank: player.chenRank,
+          adp: player.adp,
+        })),
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      setNotice(`Mock harness failed: ${body.error ?? response.status}`);
+      return;
+    }
+    setState((previous) => ({
+      ...previous,
+      mode: "live",
+      draft: createDraftState(previous.draft.userSlot),
+    }));
+    setLeagueKey(key);
+    setSyncPaused(false);
+    setSelected(null);
+    setNotice(
+      `Mock harness ${key} running — new pick every ${syncIntervalSec}s. Live sync polling.`,
+    );
   }
 
   function startSession(mode: "mock" | "live") {
@@ -265,16 +443,42 @@ export function DraftAssistant() {
     );
   }
 
-  function confirm(player: Player) {
+  async function confirm(player: Player) {
     if (!isMyTurn) {
       setNotice(`Pick ${current.overall} belongs to draft slot ${current.slot}.`);
       return;
     }
     try {
-      updateDraft(
-        makeManualPick(state.draft, player, { madeAt: new Date().toISOString() }),
-        `Confirmed ${player.name} locally. Waiting for future Yahoo reconciliation.`,
-      );
+      const next = makeManualPick(state.draft, player, {
+        madeAt: new Date().toISOString(),
+      });
+      if (leagueKey.startsWith("mock.")) {
+        const response = await fetch("/api/yahoo/mock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "confirm",
+            leagueKey,
+            playerId: player.id,
+          }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          setNotice(
+            `Mock harness rejected confirm: ${body.error ?? response.status}`,
+          );
+          return;
+        }
+        updateDraft(
+          next,
+          `Confirmed ${player.name}. Mock resume — next opponent in ~${syncIntervalSec}s.`,
+        );
+      } else {
+        updateDraft(
+          next,
+          `Confirmed ${player.name} locally. Still submit the pick in Yahoo.`,
+        );
+      }
       setSelected(null);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to record pick");
@@ -310,12 +514,14 @@ export function DraftAssistant() {
   }
 
   function toggleList(key: "pins" | "avoids", id: string) {
-    setState((previous) => ({
-      ...previous,
-      [key]: previous[key].includes(id)
-        ? previous[key].filter((value) => value !== id)
-        : [...previous[key], id],
-    }));
+    setState((previous) => {
+      const current = previous[key] ?? [];
+      const next = current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id];
+      return { ...previous, [key]: next };
+    });
+    if (key === "avoids" && selected === id) setSelected(null);
   }
 
   async function importFile(file?: File) {
@@ -386,8 +592,9 @@ export function DraftAssistant() {
   }
 
   const selectedPlayer =
-    available.find((player) => player.id === selected) ??
-    recommendation.recommendations[0]?.player;
+    available.find(
+      (player) => player.id === selected && !avoids.includes(player.id),
+    ) ?? recommendation.recommendations[0]?.player;
 
   if (!ready) return <main className="loading">Loading draft room…</main>;
 
@@ -576,7 +783,7 @@ export function DraftAssistant() {
             </div>
             {filtered.slice(0, 80).map((player) => (
               <div
-                className={`table-row ${selected === player.id ? "selected" : ""} ${state.avoids.includes(player.id) ? "avoided" : ""}`}
+                className={`table-row ${selected === player.id ? "selected" : ""} ${avoids.includes(player.id) ? "avoided" : ""}`}
                 key={player.id}
                 onClick={() => setSelected(player.id)}
                 role="row"
@@ -590,10 +797,10 @@ export function DraftAssistant() {
                 <span>{player.adp ?? "—"}</span>
                 <span className="row-actions">
                   <button onClick={(event) => { event.stopPropagation(); toggleList("pins", player.id); }}>
-                    {state.pins.includes(player.id) ? "★" : "☆"}
+                    {(state.pins ?? []).includes(player.id) ? "★" : "☆"}
                   </button>
                   <button onClick={(event) => { event.stopPropagation(); toggleList("avoids", player.id); }}>
-                    {state.avoids.includes(player.id) ? "Allow" : "Avoid"}
+                    {avoids.includes(player.id) ? "Allow" : "Avoid"}
                   </button>
                   <button onClick={(event) => { event.stopPropagation(); markDrafted(player); }}>
                     Drafted
@@ -645,6 +852,51 @@ export function DraftAssistant() {
               <input type="checkbox" checked={autoDisabled} onChange={(event) => setAutoDisabled(event.target.checked)} />
               Automatic behavior disabled
             </label>
+            <div className="sync-panel">
+              <p className="eyebrow">Live sync harness</p>
+              <label>
+                League key
+                <input
+                  type="text"
+                  placeholder="mock.abc123 or 461.l.12345"
+                  value={leagueKey}
+                  onChange={(event) => setLeagueKey(event.target.value)}
+                />
+              </label>
+              <label>
+                Poll every
+                <select
+                  value={syncIntervalSec}
+                  onChange={(event) => setSyncIntervalSec(Number(event.target.value))}
+                >
+                  {[3, 5, 8, 15, 30].map((value) => (
+                    <option key={value} value={value}>
+                      {value}s
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="sync-actions">
+                <button className="secondary" onClick={startMockHarness}>
+                  Start mock harness
+                </button>
+                <button
+                  className="secondary"
+                  onClick={async () => {
+                    if (!leagueKey.trim()) return;
+                    await fetch(
+                      `/api/yahoo/mock?leagueKey=${encodeURIComponent(leagueKey.trim())}`,
+                      { method: "DELETE" },
+                    );
+                    setNotice(`Stopped mock ${leagueKey}.`);
+                    setSyncStatus("idle");
+                  }}
+                >
+                  Stop mock
+                </button>
+              </div>
+              <p className="sync-status">Status: {syncStatus}</p>
+            </div>
           </section>
 
           <section className="panel exports">

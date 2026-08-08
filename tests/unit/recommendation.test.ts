@@ -121,6 +121,24 @@ describe("transparent recommendations", () => {
     expect(byId.has("early-def")).toBe(false);
   });
 
+  it("excludes avoided player ids from the top recommendations", () => {
+    const withoutAvoid = recommendPlayers(createDraftState(1), pool, {
+      topCount: 5,
+    });
+    const avoidedId = withoutAvoid.recommendations[0]?.player.id;
+    expect(avoidedId).toBeTruthy();
+    const withAvoid = recommendPlayers(createDraftState(1), pool, {
+      topCount: 5,
+      excludePlayerIds: [avoidedId!],
+    });
+    expect(
+      withAvoid.recommendations.some(
+        (recommendation) => recommendation.player.id === avoidedId,
+      ),
+    ).toBe(false);
+    expect(withAvoid.recommendations).toHaveLength(5);
+  });
+
   it("uses optional ADP and return probability while allowing weight overrides", () => {
     const result = recommendPlayers(createDraftState(6), pool, {
       topCount: 8,
