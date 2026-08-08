@@ -60,7 +60,8 @@ export function createYahooAuthorizationUrl(state: string) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
   url.searchParams.set("language", "en-us");
-  url.searchParams.set("scope", process.env.YAHOO_OAUTH_SCOPE ?? "fspt-r");
+  const scope = process.env.YAHOO_OAUTH_SCOPE?.trim();
+  if (scope) url.searchParams.set("scope", scope);
   return url;
 }
 
