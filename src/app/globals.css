@@ -135,39 +135,6 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.dojo-seal {
-  width: 58px;
-  height: 58px;
-  margin-left: 5px;
-  display: grid;
-  place-content: center;
-  border: 2px solid #e8b323;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle, #b52923 0 48%, #17120f 49% 64%, #e8b323 65% 69%, #17120f 70%);
-  color: #fff4cf;
-  box-shadow: 0 5px 18px rgb(45 18 12 / 22%);
-  line-height: .82;
-  text-align: center;
-  text-transform: uppercase;
-  transform: rotate(-3deg);
-}
-
-.dojo-seal span,
-.dojo-seal small {
-  font-size: 6px;
-  font-weight: 900;
-  letter-spacing: .12em;
-}
-
-.dojo-seal strong {
-  color: #ffd85b;
-  font-size: 17px;
-  font-style: italic;
-  letter-spacing: -.06em;
-  text-shadow: 1px 1px #42100d;
-}
-
 h1, h2, p {
   margin: 0;
 }

@@ -409,11 +409,6 @@ export function DraftAssistant() {
             <h1>Conroy&apos;s AI Draft Dojo</h1>
             <p className="brand-tagline">Strike first. Draft smart. Conroy&apos;s AI gonna fuck you up.</p>
           </div>
-          <div className="dojo-seal" aria-label="Cobra Kai draft dojo">
-            <span>Cobra</span>
-            <strong>Kai</strong>
-            <small>Draft Dojo</small>
-          </div>
         </div>
         <div className="status-row">
           <span className={`status ${state.mode === "mock" ? "simulation" : "live"}`}>
