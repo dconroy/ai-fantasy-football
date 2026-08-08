@@ -405,9 +405,14 @@ export function DraftAssistant() {
             priority
           />
           <div className="brand-copy">
-            <p className="eyebrow">Full Contact · 2026 · 12-team full PPR</p>
-            <h1>Conroy&apos;s AI Draft Room</h1>
-            <p className="brand-tagline">Conroy&apos;s AI gonna fuck you up.</p>
+            <p className="eyebrow">Cobra Kai · Full Contact · 2026</p>
+            <h1>Conroy&apos;s AI Draft Dojo</h1>
+            <p className="brand-tagline">Strike first. Draft smart. Conroy&apos;s AI gonna fuck you up.</p>
+          </div>
+          <div className="dojo-seal" aria-label="Cobra Kai draft dojo">
+            <span>Cobra</span>
+            <strong>Kai</strong>
+            <small>Draft Dojo</small>
           </div>
         </div>
         <div className="status-row">
