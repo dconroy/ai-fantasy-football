@@ -1,20 +1,16 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { prisma } from "@/persistence/prisma";
 import { parseChenCsv, type ChenImport } from "./boris-chen";
 
-const CACHE_DIRECTORY = path.join(process.cwd(), "data", "cache");
-const CACHE_FILE = path.join(CACHE_DIRECTORY, "chen-ppr.json");
-
-interface CachedImport {
-  checksum: string;
-  import: ChenImport;
-}
+const CACHE_SOURCE = "boris-chen-ppr";
 
 export async function readCachedChenImport(): Promise<ChenImport | null> {
   try {
-    const raw = await readFile(CACHE_FILE, "utf8");
-    return (JSON.parse(raw) as CachedImport).import;
+    const cached = await prisma.dataImport.findFirst({
+      where: { source: CACHE_SOURCE },
+      orderBy: { fetchedAt: "desc" },
+    });
+    return cached ? (JSON.parse(cached.payload) as ChenImport) : null;
   } catch {
     return null;
   }
@@ -36,19 +32,14 @@ export async function fetchChenPprImport(): Promise<ChenImport> {
     if (imported.players.length === 0) {
       throw new Error("Source contained no usable players");
     }
-    await mkdir(CACHE_DIRECTORY, { recursive: true });
-    await writeFile(
-      CACHE_FILE,
-      JSON.stringify(
-        {
-          checksum: createHash("sha256").update(csv).digest("hex"),
-          import: imported,
-        } satisfies CachedImport,
-        null,
-        2,
-      ),
-      "utf8",
-    );
+    await prisma.dataImport.create({
+      data: {
+        source: CACHE_SOURCE,
+        playerCount: imported.players.length,
+        checksum: createHash("sha256").update(csv).digest("hex"),
+        payload: JSON.stringify(imported),
+      },
+    });
     return imported;
   } catch (error) {
     const cached = await readCachedChenImport();

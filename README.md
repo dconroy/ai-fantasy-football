@@ -19,8 +19,8 @@ a current Boris Chen PPR CSV before relying on rankings.
   the next two choices.
 - Confirm a recommendation locally, mark any player drafted, undo the latest
   pick, pin targets, avoid players, search/filter, and change key weights.
-- Local storage preserves the active draft immediately. Prisma/SQLite provides
-  a server-side persistence route when the database is initialized.
+- Local storage preserves the active draft immediately. Prisma/Neon Postgres
+  synchronizes the active session across devices.
 - Import CSV manually or ask the server adapter to retrieve/cache the configured
   public Chen PPR file. Source and import timestamps are visible.
 - Export draft results as JSON or CSV. Light and dark themes are included.
@@ -34,7 +34,7 @@ Requires Node.js 20.9 or newer (Node 22 LTS recommended).
 npm install
 cp .env.example .env
 npm run db:generate
-npm run db:push
+npm run db:migrate
 npm run dev
 ```
 
@@ -56,8 +56,8 @@ npm run test:e2e
 `src/adapters/chen/boris-chen.ts` is the replaceable source adapter. It
 preserves tier, position-specific rank, overall rank, team, bye, and optional
 ADP from supported CSV columns. The fetch route uses the public URL configured
-by `CHEN_PPR_CSV_URL`, writes only successful responses to `data/cache`, and
-falls back to the last successful cache. It does not scrape pages, bypass access
+by `CHEN_PPR_CSV_URL`, stores only successful responses in Postgres, and falls
+back to the last successful cache. It does not scrape pages, bypass access
 controls, or work around source restrictions.
 
 Because source availability and schema can change, manual CSV import remains the
@@ -67,19 +67,18 @@ terms.
 ## Yahoo developer app and OAuth
 
 1. Create an application at <https://developer.yahoo.com/apps/>.
-2. Request Fantasy Sports private user data access. Read-only access is enough
-   for the current adapter.
-3. Set the callback URL to `http://localhost:3000/api/yahoo/callback`.
+2. Request Fantasy Sports API access at <https://sports.yahoo.com/developer/access/>.
+3. Set the callback URL to
+   `https://draft.conroy.dev/api/yahoo/callback`.
 4. Copy only the client ID and secret into your uncommitted `.env`; never add
    access or refresh tokens to Git.
 5. Set the full 2026 league key (Yahoo keys normally include the game key and
    league ID) after the league exists.
 
-The read-only adapter in `src/adapters/yahoo/yahoo-api.ts` supports settings,
-teams, draft results, and available players when supplied a valid OAuth bearer
-token. The browser authorization/callback and encrypted refresh-token store are
-intentionally remaining work; the simulation does not fake a Yahoo connection.
-See `docs/YAHOO_LIMITATIONS.md`.
+The adapter supports settings, teams, draft results, and available players.
+`/api/yahoo/auth` starts OAuth; access and refresh tokens are encrypted with
+AES-256-GCM before storage in Postgres. Yahoo may return `403` until the
+application is approved for Fantasy Sports. See `docs/YAHOO_LIMITATIONS.md`.
 
 ## Recommendation model
 
@@ -94,8 +93,9 @@ and stale-sync guards are covered by unit tests.
 
 ## Project layout
 
-See `docs/ARCHITECTURE.md`. Prisma stores serialized local sessions and confirmed
-identity mappings in SQLite. Yahoo player IDs should become canonical only after
+See `docs/ARCHITECTURE.md`. Prisma stores shared sessions, encrypted OAuth
+credentials, sync checkpoints, and confirmed identity mappings in Postgres.
+Yahoo player IDs should become canonical only after
 the identity resolver returns an exact result or the user confirms an ambiguous
 mapping.
 
@@ -103,8 +103,8 @@ mapping.
 
 - Replace synthetic fixtures with validated 2026 Chen data and review unmatched
   identities.
-- Complete Yahoo OAuth callback, encrypted token persistence, player-response
-  parsing, and UI reconciliation using a real 2026 test league.
+- Complete player-response parsing and UI reconciliation using a real 2026 test
+  league after Yahoo approves API access.
 - Measure how quickly Yahoo publishes active draft results and tune conservative
   polling/backoff behavior.
 - Run a full dress rehearsal, including stale sync, conflicts, undo, refresh,
@@ -113,39 +113,3 @@ mapping.
 
 Yahoo has no documented live-draft pick submission operation. Confirm Pick is
 local only. Do not reinterpret transaction or lineup endpoints as draft APIs.
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
-## Getting Started
-
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

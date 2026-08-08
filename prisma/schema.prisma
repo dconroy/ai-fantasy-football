@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 model DraftSession {
@@ -36,4 +37,40 @@ model DataImport {
   playerCount Int
   checksum    String?
   payload     String
+
+  @@index([source, fetchedAt])
+}
+
+model OAuthCredential {
+  id                    String   @id
+  provider              String   @default("yahoo")
+  encryptedAccessToken  String
+  encryptedRefreshToken String
+  expiresAt             DateTime
+  scope                 String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model LeagueConnection {
+  id                   String   @id @default(cuid())
+  provider             String   @default("yahoo")
+  leagueKey            String   @unique
+  leagueName           String?
+  teamKey              String?
+  teamName             String?
+  draftSlot            Int?
+  lastSuccessfulSyncAt DateTime?
+  lastSyncError        String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model SyncCheckpoint {
+  id         String   @id
+  sequence   Int
+  payload    String?
+  syncedAt   DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

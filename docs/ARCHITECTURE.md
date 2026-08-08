@@ -4,9 +4,10 @@
   recommendation logic.
 - `src/config/strategy.ts`: every recommendation weight and safety default.
 - `src/adapters/chen`: replaceable CSV adapter plus server-side fetch/cache.
-- `src/adapters/yahoo`: read-only OAuth bearer-token API boundary. It
-  intentionally has no pick-submission method.
-- `src/persistence`: Prisma/SQLite client. The UI also mirrors simulation state
+- `src/adapters/yahoo`: OAuth, encrypted token refresh, and read-only Fantasy
+  API boundary. It intentionally has no pick-submission method.
+- `src/persistence`: Prisma/Neon Postgres client for shared sessions, source
+  caches, mappings, and sync checkpoints. The UI also mirrors simulation state
   to local storage so a database outage does not erase an active mock draft.
 - `src/app`: Next.js routes and desktop-first React interface.
 

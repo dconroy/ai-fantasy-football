@@ -1,4 +1,5 @@
 const { defineConfig, devices } = require("@playwright/test");
+require("@next/env").loadEnvConfig(process.cwd());
 
 module.exports = defineConfig({
   testDir: "./tests/e2e",

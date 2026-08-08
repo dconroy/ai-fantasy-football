@@ -14,10 +14,14 @@ export async function GET() {
 export async function PUT(request: Request) {
   const body = (await request.json()) as {
     draftSlot?: number;
+    draft?: { userSlot?: number };
     leagueKey?: string;
     [key: string]: unknown;
   };
-  const draftSlot = Math.min(12, Math.max(1, Number(body.draftSlot) || 1));
+  const draftSlot = Math.min(
+    12,
+    Math.max(1, Number(body.draftSlot ?? body.draft?.userSlot) || 1),
+  );
   const session = await prisma.draftSession.upsert({
     where: { id: LOCAL_SESSION_ID },
     create: {

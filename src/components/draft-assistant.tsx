@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   availablePlayers,
@@ -25,6 +26,7 @@ const POSITIONS: readonly (Position | "ALL")[] = [
 ];
 
 interface PersistedUiState {
+  mode: "mock" | "live";
   draft: DraftState;
   players: readonly Player[];
   pins: readonly string[];
@@ -35,6 +37,7 @@ interface PersistedUiState {
 }
 
 const initialState: PersistedUiState = {
+  mode: "mock",
   draft: createDraftState(1),
   players: MOCK_PLAYERS,
   pins: [],
@@ -44,11 +47,22 @@ const initialState: PersistedUiState = {
   weights: DEFAULT_STRATEGY_WEIGHTS,
 };
 
+function normalizePersisted(state: Partial<PersistedUiState> | null): PersistedUiState {
+  if (!state?.draft || !state.players) return initialState;
+  return {
+    ...initialState,
+    ...state,
+    mode: state.mode === "live" ? "live" : "mock",
+  };
+}
+
 function hydrate(): PersistedUiState {
   if (typeof window === "undefined") return initialState;
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
-    return saved ? (JSON.parse(saved) as PersistedUiState) : initialState;
+    return saved
+      ? normalizePersisted(JSON.parse(saved) as Partial<PersistedUiState>)
+      : initialState;
   } catch {
     return initialState;
   }
@@ -125,13 +139,43 @@ export function DraftAssistant() {
   const [syncPaused, setSyncPaused] = useState(false);
   const [autoDisabled, setAutoDisabled] = useState(true);
   const [dark, setDark] = useState(false);
+  const [yahooConnected, setYahooConnected] = useState(false);
   const [notice, setNotice] = useState("Simulation ready");
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setState(hydrate());
     setDark(window.matchMedia("(prefers-color-scheme: dark)").matches);
-    setReady(true);
+    let cancelled = false;
+    fetch("/api/session")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((shared: PersistedUiState | null) => {
+        if (!cancelled) {
+          setState(shared?.draft && shared?.players ? normalizePersisted(shared) : hydrate());
+          setNotice(shared ? "Loaded shared draft state" : "Simulation ready");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setState(hydrate());
+      })
+      .finally(() => {
+        if (!cancelled) setReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/yahoo/status")
+      .then((response) => response.json())
+      .then((status: { connected?: boolean }) =>
+        setYahooConnected(status.connected === true),
+      )
+      .catch(() => setYahooConnected(false));
+    const yahooResult = new URLSearchParams(window.location.search).get("yahoo");
+    if (yahooResult === "connected") setNotice("Yahoo connected successfully.");
+    if (yahooResult === "denied") setNotice("Yahoo authorization was cancelled.");
+    if (yahooResult === "error") setNotice("Yahoo authorization failed.");
   }, []);
 
   useEffect(() => {
@@ -197,6 +241,30 @@ export function DraftAssistant() {
     setNotice(message);
   }
 
+  function startSession(mode: "mock" | "live") {
+    if (
+      state.draft.picks.length > 0 &&
+      !window.confirm(
+        `Clear all ${state.draft.picks.length} recorded picks and start a clean ${mode} draft?`,
+      )
+    ) {
+      return;
+    }
+    setState((previous) => ({
+      ...previous,
+      mode,
+      draft: createDraftState(previous.draft.userSlot),
+    }));
+    setSelected(null);
+    setSyncPaused(mode === "mock");
+    setAutoDisabled(true);
+    setNotice(
+      mode === "mock"
+        ? `Joined a new local mock draft from slot ${state.draft.userSlot}.`
+        : `Live board reset and ready from slot ${state.draft.userSlot}.`,
+    );
+  }
+
   function confirm(player: Player) {
     if (!isMyTurn) {
       setNotice(`Pick ${current.overall} belongs to draft slot ${current.slot}.`);
@@ -225,6 +293,10 @@ export function DraftAssistant() {
   }
 
   function simulateToTurn() {
+    if (state.mode !== "mock") {
+      setNotice("Simulation is disabled on the live draft board.");
+      return;
+    }
     let next = state.draft;
     while (
       next.picks.length < next.teamCount * next.rounds &&
@@ -322,13 +394,33 @@ export function DraftAssistant() {
   return (
     <main className={dark ? "app dark" : "app"}>
       <header className="topbar">
-        <div>
-          <p className="eyebrow">2026 · 12-team full PPR</p>
-          <h1>Draft Room</h1>
+        <div className="brand-lockup">
+          <Image
+            className="brand-mark"
+            src="https://raw.githubusercontent.com/dconroy/ai-fantasy-football/main/image%20%2814%29.png"
+            alt="Full Contact fantasy football league"
+            width={58}
+            height={58}
+            unoptimized
+            priority
+          />
+          <div className="brand-copy">
+            <p className="eyebrow">Full Contact · 2026 · 12-team full PPR</p>
+            <h1>Conroy&apos;s AI Draft Room</h1>
+            <p className="brand-tagline">Conroy&apos;s AI gonna fuck you up.</p>
+          </div>
         </div>
         <div className="status-row">
-          <span className="status simulation">● Simulation</span>
-          <span className="status">Yahoo disconnected</span>
+          <span className={`status ${state.mode === "mock" ? "simulation" : "live"}`}>
+            ● {state.mode === "mock" ? "Mock draft" : "Live board"}
+          </span>
+          {yahooConnected ? (
+            <span className="status connected">● Yahoo connected</span>
+          ) : (
+            <a className="status yahoo-connect" href="/api/yahoo/auth">
+              Connect Yahoo
+            </a>
+          )}
           <button className="icon-button" onClick={() => setDark((value) => !value)}>
             {dark ? "Light" : "Dark"}
           </button>
@@ -358,11 +450,16 @@ export function DraftAssistant() {
             Pick {current.overall} · Round {current.round} · Slot {current.slot}
           </span>
         </div>
-        <button onClick={simulateToTurn} disabled={isMyTurn}>Simulate to my pick</button>
+        <button
+          onClick={simulateToTurn}
+          disabled={state.mode !== "mock" || isMyTurn}
+        >
+          Simulate to my pick
+        </button>
         <button
           className="secondary"
           onClick={() => updateDraft(opponentPick(state.draft, state.players), "Advanced one pick.")}
-          disabled={isMyTurn}
+          disabled={state.mode !== "mock" || isMyTurn}
         >
           Advance one
         </button>
@@ -374,6 +471,12 @@ export function DraftAssistant() {
           disabled={!state.draft.picks.length}
         >
           Undo
+        </button>
+        <button className="secondary" onClick={() => startSession("mock")}>
+          New mock
+        </button>
+        <button className="live-button" onClick={() => startSession("live")}>
+          Prepare live
         </button>
         <button className="danger" onClick={() => setAutoDisabled(true)}>
           Emergency disable
@@ -553,13 +656,9 @@ export function DraftAssistant() {
             </button>
             <button
               className="secondary"
-              onClick={() => {
-                window.localStorage.removeItem(STORAGE_KEY);
-                setState(initialState);
-                setNotice("Simulation reset.");
-              }}
+              onClick={() => startSession("mock")}
             >
-              Reset simulation
+              Reset to new mock
             </button>
           </section>
         </aside>

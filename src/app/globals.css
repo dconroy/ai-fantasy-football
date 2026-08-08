@@ -10,6 +10,8 @@
   --green: #176b43;
   --green-bright: #2d9b64;
   --green-soft: #e4f4eb;
+  --saffron: #c76b2a;
+  --cream: #f5ecd8;
   --red: #b43c38;
   --shadow: 0 1px 2px rgb(13 35 22 / 5%), 0 10px 30px rgb(13 35 22 / 4%);
 }
@@ -58,6 +60,7 @@ button:disabled {
   padding: 20px 24px 48px;
   background:
     radial-gradient(circle at 85% -20%, #dcefe4 0, transparent 32%),
+    radial-gradient(circle at 8% -12%, rgb(199 107 42 / 8%) 0, transparent 22%),
     var(--bg);
   color: var(--text);
 }
@@ -71,16 +74,65 @@ button:disabled {
   --line: #334039;
   --green: #3aa875;
   --green-soft: #1d3c2d;
+  --saffron: #e18a47;
+  --cream: #f1e6cf;
   --shadow: 0 1px 2px rgb(0 0 0 / 30%);
 }
 
 .topbar {
+  position: relative;
   max-width: 1800px;
   margin: auto;
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
-  padding: 4px 2px 18px;
+  padding: 4px 2px 20px;
+}
+
+.topbar::after {
+  position: absolute;
+  right: 2px;
+  bottom: 8px;
+  left: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--green) 0 33%,
+    var(--cream) 33% 66%,
+    var(--saffron) 66% 100%
+  );
+  content: "";
+  opacity: .55;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  width: 58px;
+  height: 58px;
+  border: 1px solid color-mix(in srgb, var(--saffron) 38%, var(--line));
+  border-radius: 50%;
+  background: #0c1710;
+  box-shadow: 0 5px 18px rgb(13 35 22 / 14%);
+}
+
+.brand-copy {
+  display: grid;
+  gap: 1px;
+}
+
+.brand-tagline {
+  color: var(--saffron);
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .035em;
+  text-transform: uppercase;
 }
 
 h1, h2, p {
@@ -119,11 +171,34 @@ h2 {
   padding: 7px 11px;
   font-size: 11px;
   font-weight: 700;
+  text-decoration: none;
 }
 
 .status.simulation {
   color: var(--green);
-  border-color: color-mix(in srgb, var(--green) 25%, var(--line));
+  border-color: color-mix(in srgb, var(--saffron) 32%, var(--line));
+  box-shadow: inset 2px 0 var(--saffron);
+}
+
+.status.connected {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 35%, var(--line));
+}
+
+.status.live {
+  color: var(--saffron);
+  border-color: color-mix(in srgb, var(--saffron) 42%, var(--line));
+  box-shadow: inset 2px 0 var(--saffron);
+}
+
+.status.yahoo-connect:hover {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.live-button {
+  border-color: #d58242;
+  background: #9a4f1e;
 }
 
 .icon-button, .secondary {
@@ -585,6 +660,178 @@ h2 {
   display: grid;
   place-items: center;
   background: var(--bg);
+}
+
+.security-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 20%, rgb(26 104 66 / 22%), transparent 36%),
+    repeating-linear-gradient(0deg, transparent 0 3px, rgb(255 255 255 / 1%) 3px 4px),
+    #07100b;
+  color: #dceade;
+  font-family: var(--font-mono), monospace;
+}
+
+.security-console {
+  position: relative;
+  width: min(540px, 100%);
+  overflow: hidden;
+  border: 1px solid #2b5d42;
+  border-top: 3px solid #248154;
+  border-radius: 4px;
+  background: rgb(8 23 15 / 94%);
+  box-shadow: 0 30px 90px rgb(0 0 0 / 55%), inset 0 0 60px rgb(22 107 66 / 8%);
+  padding: 42px 38px 32px;
+  text-align: center;
+}
+
+.newman-gif {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: auto;
+  margin-bottom: 24px;
+  border: 1px solid #315d44;
+  border-radius: 2px;
+  background: #e9ede9;
+  filter: saturate(.72) contrast(1.08);
+  box-shadow: 0 0 30px rgb(63 194 116 / 10%);
+}
+
+.security-scanline {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(transparent 48%, rgb(85 255 163 / 4%) 50%, transparent 52%);
+  background-size: 100% 9px;
+}
+
+.security-emblem {
+  position: relative;
+  width: 82px;
+  height: 82px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 22px;
+  border: 1px solid #3e8d61;
+  border-radius: 50%;
+  color: #65d99a;
+  box-shadow: 0 0 28px rgb(64 208 127 / 16%), inset 0 0 20px rgb(64 208 127 / 10%);
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.security-emblem i {
+  position: absolute;
+  inset: 7px;
+  border: 1px dashed #2e6948;
+  border-radius: 50%;
+}
+
+.security-kicker {
+  color: #6ea783;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.security-console h1 {
+  margin-top: 8px;
+  color: #e7f2e9;
+  font-size: 29px;
+  letter-spacing: -.045em;
+  text-transform: uppercase;
+}
+
+.security-message {
+  min-height: 42px;
+  margin: 11px auto 24px;
+  color: #91aa98;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.security-console form {
+  display: grid;
+  gap: 9px;
+  text-align: left;
+}
+
+.security-console label {
+  color: #67a47e;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.security-console input {
+  width: 100%;
+  height: 46px;
+  border: 1px solid #2f6748;
+  border-radius: 3px;
+  outline: none;
+  background: #050d08;
+  color: #7cf0ad;
+  padding: 0 13px;
+  letter-spacing: .08em;
+}
+
+.security-console input:focus {
+  border-color: #58c887;
+  box-shadow: 0 0 0 3px rgb(69 190 119 / 10%);
+}
+
+.security-console button {
+  height: 43px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: #176b43;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.security-console .security-audio {
+  width: 100%;
+  margin: -10px 0 16px;
+  border-color: #775b28;
+  background: #3a2c13;
+  color: #f1d892;
+}
+
+.security-console small {
+  display: block;
+  margin-top: 20px;
+  color: #466052;
+  font-size: 8px;
+}
+
+.security-console.denied {
+  border-color: #8c332f;
+  border-top-color: #cf4c45;
+  animation: security-shake .24s linear 1;
+}
+
+.security-console.denied .security-emblem {
+  border-color: #b94740;
+  color: #ff7168;
+  box-shadow: 0 0 34px rgb(216 60 53 / 17%);
+}
+
+.security-console.denied h1,
+.security-console.denied .security-message {
+  color: #ff7770;
+}
+
+@keyframes security-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-7px); }
+  75% { transform: translateX(7px); }
 }
 
 @media (max-width: 1180px) {
