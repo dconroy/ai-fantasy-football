@@ -234,7 +234,7 @@ h2 {
   align-items: center;
   gap: 8px;
   color: #b5c7bc;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -347,7 +347,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .player-line > span:not(.position) {
@@ -593,28 +593,30 @@ h2 {
 }
 
 .board {
-  max-width: 1800px;
+  max-width: 100%;
   margin: 12px auto 0;
 }
 
 .board-grid {
   display: grid;
-  grid-template-columns: repeat(12, minmax(105px, 1fr));
-  overflow: auto;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  overflow: hidden;
 }
 
 .board-team {
   min-height: 130px;
   border-right: 1px solid var(--line);
   padding-bottom: 7px;
+  min-width: 0;
 }
 
 .board-team > strong {
   display: block;
-  padding: 7px;
+  padding: 8px 6px;
   background: var(--panel-2);
   color: var(--muted);
-  font-size: 8px;
+  font-size: 11px;
+  letter-spacing: .04em;
   text-align: center;
 }
 
@@ -628,26 +630,43 @@ h2 {
 }
 
 .board-pick {
-  display: grid;
-  grid-template-columns: 21px 1fr 20px;
-  gap: 3px;
-  margin: 5px 5px 0;
+  position: relative;
+  display: block;
+  margin: 6px 5px 0;
   border-left: 3px solid #6d8ab0;
-  border-radius: 4px;
+  border-radius: 5px;
   background: color-mix(in srgb, var(--panel) 80%, #dce7f4);
-  padding: 5px 4px;
-  font-size: 8px;
+  padding: 6px 30px 6px 8px;
+  min-height: 46px;
+  font-size: 12px;
+  line-height: 1.15;
 }
 
-.board-pick span, .board-pick small {
+.board-pick span {
+  display: block;
   color: var(--muted);
-  font-size: 7px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.board-pick small {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .05em;
 }
 
 .board-pick b {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.15;
 }
 
 .board-pick.pos-rb { border-color: #4a9a65; }

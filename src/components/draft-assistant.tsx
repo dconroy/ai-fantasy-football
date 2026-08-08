@@ -672,7 +672,7 @@ export function DraftAssistant() {
         <div className="board-grid">
           {Array.from({ length: 12 }, (_, index) => (
             <div className={`board-team ${index + 1 === state.draft.userSlot ? "mine" : ""}`} key={index}>
-              <strong>{index + 1 === state.draft.userSlot ? "MY TEAM" : `TEAM ${index + 1}`}</strong>
+              <strong>{index + 1 === state.draft.userSlot ? "COBRA KAI" : `T${index + 1}`}</strong>
               {state.draft.picks
                 .filter((pick) => pick.slot === index + 1)
                 .map((pick) => (
