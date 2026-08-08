@@ -18,11 +18,23 @@ export interface YahooSyncSnapshot {
   syncedAt: string;
 }
 
+export interface YahooLeagueSummary {
+  leagueKey: string;
+  leagueId: string;
+  name: string;
+  season?: number;
+  currentWeek?: number;
+  numTeams?: number;
+  scoringType?: string;
+  draftStatus?: string;
+}
+
 export interface YahooFantasyReadAdapter {
   getLeagueSettings(leagueKey: string): Promise<unknown>;
   getLeagueTeams(leagueKey: string): Promise<unknown>;
   getDraftResults(leagueKey: string): Promise<YahooDraftResult[]>;
   getAvailablePlayers(leagueKey: string, start?: number): Promise<unknown>;
+  getUserNflLeagues(): Promise<YahooLeagueSummary[]>;
 }
 
 function list<T>(value: T | T[] | undefined): T[] {
@@ -87,6 +99,45 @@ export class YahooApi implements YahooFantasyReadAdapter {
     return this.get(
       `/league/${encodeURIComponent(leagueKey)}/players;status=A;sort=OR;start=${start}`,
     );
+  }
+
+  async getUserNflLeagues(): Promise<YahooLeagueSummary[]> {
+    const body = await this.get(
+      "/users;use_login=1/games;game_codes=nfl/leagues",
+    );
+    const users = list<Record<string, unknown>>(body?.fantasy_content?.users?.user);
+    const games = users.flatMap((user) =>
+      list<Record<string, unknown>>(
+        (user as { games?: { game?: Record<string, unknown> | Record<string, unknown>[] } })
+          .games?.game,
+      ),
+    );
+    const leagues = games.flatMap((game) =>
+      list<Record<string, string | number>>(
+        (
+          game as {
+            leagues?: {
+              league?: Record<string, string | number> | Record<string, string | number>[];
+            };
+          }
+        ).leagues?.league,
+      ),
+    );
+    return leagues
+      .map((league) => ({
+        leagueKey: String(league.league_key ?? ""),
+        leagueId: String(league.league_id ?? ""),
+        name: String(league.name ?? "Yahoo league"),
+        season: league.season === undefined ? undefined : Number(league.season),
+        currentWeek:
+          league.current_week === undefined ? undefined : Number(league.current_week),
+        numTeams: league.num_teams === undefined ? undefined : Number(league.num_teams),
+        scoringType:
+          league.scoring_type === undefined ? undefined : String(league.scoring_type),
+        draftStatus:
+          league.draft_status === undefined ? undefined : String(league.draft_status),
+      }))
+      .filter((league) => league.leagueKey.length > 0);
   }
 
   async snapshot(leagueKey: string): Promise<YahooSyncSnapshot> {
