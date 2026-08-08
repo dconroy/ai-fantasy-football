@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
@@ -11,13 +11,38 @@ export default function LoginPage() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioPlayCount = useRef(1);
 
+  const playAudio = useCallback(async () => {
+    try {
+      await audioRef.current?.play();
+      setAudioBlocked(false);
+      return true;
+    } catch {
+      setAudioBlocked(true);
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     audioPlayCount.current = 1;
-    audioRef.current
-      ?.play()
-      .then(() => setAudioBlocked(false))
-      .catch(() => setAudioBlocked(true));
-  }, []);
+
+    const removeUnlockListeners = () => {
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
+    const unlockAudio = () => {
+      void playAudio().then((played) => {
+        if (played) removeUnlockListeners();
+      });
+    };
+
+    window.addEventListener("pointerdown", unlockAudio);
+    window.addEventListener("keydown", unlockAudio);
+    void playAudio().then((played) => {
+      if (played) removeUnlockListeners();
+    });
+
+    return removeUnlockListeners;
+  }, [playAudio]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -79,8 +104,7 @@ export default function LoginPage() {
             type="button"
             onClick={() => {
               audioPlayCount.current = 1;
-              audioRef.current?.play();
-              setAudioBlocked(false);
+              void playAudio();
             }}
           >
             Enable security audio
