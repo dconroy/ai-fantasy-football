@@ -179,7 +179,7 @@ export function DraftAssistant() {
   const [tier, setTier] = useState("ALL");
   const [selected, setSelected] = useState<string | null>(null);
   const [syncPaused, setSyncPaused] = useState(false);
-  const [autoDisabled, setAutoDisabled] = useState(true);
+  const [previewMember, setPreviewMember] = useState(false);
   const [dark, setDark] = useState(false);
   const [yahooConnected, setYahooConnected] = useState(false);
   const [notice, setNotice] = useState("Simulation ready");
@@ -396,10 +396,14 @@ export function DraftAssistant() {
     let draft = current.draft;
     let applied = 0;
     const unresolved: string[] = [];
+    const isMockHarness = leagueKey.startsWith("mock.");
     for (const pick of remote.slice(current.draft.picks.length)) {
       const nextOverall = draft.picks.length + 1;
       const nextSlot = selectionForOverall(nextOverall, draft.teamCount).slot;
-      if (nextSlot === draft.userSlot) {
+      // In a real Yahoo draft your own pick shows up in draft results like
+      // everyone else's, so apply it. Only the mock harness waits for a
+      // local confirm.
+      if (isMockHarness && nextSlot === draft.userSlot) {
         unresolved.push(`pick ${nextOverall}: your turn — confirm locally to advance`);
         break;
       }
@@ -530,7 +534,6 @@ export function DraftAssistant() {
     }
     setSelected(null);
     setSyncPaused(mode === "mock");
-    setAutoDisabled(true);
     await mutateDraft(
       "/api/draft",
       { action: "reset", mode },
@@ -680,6 +683,34 @@ export function DraftAssistant() {
       (player) => player.id === selected && !avoids.includes(player.id),
     ) ?? recommendation.recommendations[0]?.player;
 
+  const isAdmin = me?.role === "admin";
+  const adminView = isAdmin && !previewMember;
+  const pendingCount = adminUsers.filter((user) => user.status === "pending").length;
+
+  async function patchUser(id: string, data: Record<string, unknown>) {
+    const response = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...data }),
+    });
+    const body = (await response.json().catch(() => null)) as {
+      user?: MemberSeat;
+      error?: string;
+    } | null;
+    if (!response.ok || !body?.user) {
+      setNotice(body?.error ?? "Member update failed");
+      return;
+    }
+    const updated = body.user;
+    setAdminUsers((previous) =>
+      previous.map((user) => (user.id === updated.id ? updated : user)),
+    );
+    setMembers((previous) =>
+      previous.map((user) => (user.id === updated.id ? updated : user)),
+    );
+    setNotice(`Updated ${updated.displayName}.`);
+  }
+
   if (!ready) return <main className="loading">Loading draft room…</main>;
 
   return (
@@ -702,6 +733,7 @@ export function DraftAssistant() {
           </div>
         </div>
         <div className="status-row">
+          <a className="status" href="/weekly">Weekly HQ</a>
           <span className={`status ${state.mode === "mock" ? "simulation" : "live"}`}>
             ● {state.mode === "mock" ? "Mock draft" : "Live board"}
           </span>
@@ -714,6 +746,15 @@ export function DraftAssistant() {
               Sign in with Yahoo
             </a>
           )}
+          {isAdmin && (
+            <button
+              className={`icon-button ${previewMember ? "preview-active" : ""}`}
+              onClick={() => setPreviewMember((value) => !value)}
+              title="Preview the app the way a regular member sees it"
+            >
+              {previewMember ? "Exit member view" : "View as member"}
+            </button>
+          )}
           <form action="/api/auth/logout" method="post">
             <button className="icon-button" type="submit">Sign out</button>
           </form>
@@ -722,6 +763,16 @@ export function DraftAssistant() {
           </button>
         </div>
       </header>
+
+      {isAdmin && previewMember && (
+        <div className="preview-banner" role="status">
+          <span>
+            Member preview — you&apos;re seeing exactly what your league-mates see.
+            Admin tools are hidden but you&apos;re still the admin.
+          </span>
+          <button onClick={() => setPreviewMember(false)}>Back to admin view</button>
+        </div>
+      )}
 
       <section className="control-strip">
         <label>
@@ -746,35 +797,42 @@ export function DraftAssistant() {
             Pick {current.overall} · Round {current.round} · Slot {current.slot}
           </span>
         </div>
-        <button
-          onClick={simulateToTurn}
-          disabled={state.mode !== "mock" || isMyTurn}
-        >
-          Simulate to my pick
-        </button>
-        <button
-          className="secondary"
-          onClick={() => void mutateDraft("/api/draft/pick", { action: "advance" }, "Advanced one pick.")}
-          disabled={state.mode !== "mock" || isMyTurn}
-        >
-          Advance one
-        </button>
-        <button
-          className="secondary"
-          onClick={() => void mutateDraft("/api/draft/pick", { action: "undo" }, "Undid the latest pick.")}
-          disabled={!state.draft.picks.length}
-        >
-          Undo
-        </button>
-        <button className="secondary" onClick={() => startSession("mock")}>
-          New mock
-        </button>
-        <button className="live-button" onClick={() => startSession("live")}>
-          Prepare live
-        </button>
-        <button className="danger" onClick={() => setAutoDisabled(true)}>
-          Emergency disable
-        </button>
+        {adminView ? (
+          <>
+            <button
+              onClick={simulateToTurn}
+              disabled={state.mode !== "mock" || isMyTurn}
+            >
+              Simulate to my pick
+            </button>
+            <button
+              className="secondary"
+              onClick={() => void mutateDraft("/api/draft/pick", { action: "advance" }, "Advanced one pick.")}
+              disabled={state.mode !== "mock" || isMyTurn}
+            >
+              Advance one
+            </button>
+            <button
+              className="secondary"
+              onClick={() => void mutateDraft("/api/draft/pick", { action: "undo" }, "Undid the latest pick.")}
+              disabled={!state.draft.picks.length}
+            >
+              Undo
+            </button>
+            <span className="strip-spacer" />
+            <button className="secondary" onClick={() => startSession("mock")}>
+              New mock draft
+            </button>
+            <button className="live-button" onClick={() => startSession("live")}>
+              Prepare live board
+            </button>
+          </>
+        ) : (
+          <span className="strip-hint">
+            The board is shared — the admin runs mocks, resets, and syncing.
+            You pick players, pins, and avoids.
+          </span>
+        )}
       </section>
 
       <div className="notice" role="status">{notice}</div>
@@ -826,7 +884,9 @@ export function DraftAssistant() {
           >
             Confirm {selectedPlayer?.name ?? "pick"} locally
           </button>
-          <p className="safety-note">Never submits to Yahoo. Auto-selection: {autoDisabled ? "OFF" : "OFF (feature unavailable)"}</p>
+          <p className="safety-note">
+            Picks are recorded on this board only — make the real pick in the Yahoo app.
+          </p>
         </aside>
 
         <section className="panel available-panel">
@@ -835,19 +895,21 @@ export function DraftAssistant() {
               <p className="eyebrow">Chen-first rankings</p>
               <h2>Best available <span>{available.length}</span></h2>
             </div>
-            <div className="import-actions">
-              <button className="secondary" onClick={fetchChen}>Fetch Chen PPR</button>
-              <button className="secondary" onClick={() => importRef.current?.click()}>
-                Import CSV
-              </button>
-              <input
-                ref={importRef}
-                hidden
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(event) => importFile(event.target.files?.[0])}
-              />
-            </div>
+            {adminView && (
+              <div className="import-actions">
+                <button className="secondary" onClick={fetchChen}>Fetch Chen PPR</button>
+                <button className="secondary" onClick={() => importRef.current?.click()}>
+                  Import CSV
+                </button>
+                <input
+                  ref={importRef}
+                  hidden
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={(event) => importFile(event.target.files?.[0])}
+                />
+              </div>
+            )}
           </div>
           <p className="data-source">{state.source} · {state.importedAt}</p>
           <div className="filters">
@@ -931,116 +993,164 @@ export function DraftAssistant() {
                 />
               </label>
             ))}
-            <label className="toggle">
-              <input type="checkbox" checked={syncPaused} onChange={(event) => setSyncPaused(event.target.checked)} />
-              Pause live synchronization
-            </label>
-            <label className="toggle">
-              <input type="checkbox" checked={autoDisabled} onChange={(event) => setAutoDisabled(event.target.checked)} />
-              Automatic behavior disabled
-            </label>
-            <div className="sync-panel">
-              <p className="eyebrow">Live sync harness</p>
-              <label>
-                League key
-                <input
-                  type="text"
-                  placeholder="mock.abc123 or 461.l.12345"
-                  value={leagueKey}
-                  onChange={(event) => setLeagueKey(event.target.value)}
-                />
-              </label>
-              <label>
-                Poll every
-                <select
-                  value={syncIntervalSec}
-                  onChange={(event) => setSyncIntervalSec(Number(event.target.value))}
-                >
-                  {[3, 5, 8, 15, 30].map((value) => (
-                    <option key={value} value={value}>
-                      {value}s
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="sync-actions">
-                <button className="secondary" onClick={startMockHarness}>
-                  Start mock harness
-                </button>
-                <button
-                  className="secondary"
-                  onClick={async () => {
-                    if (!leagueKey.trim()) return;
-                    await fetch(
-                      `/api/yahoo/mock?leagueKey=${encodeURIComponent(leagueKey.trim())}`,
-                      { method: "DELETE" },
-                    );
-                    setNotice(`Stopped mock ${leagueKey}.`);
-                    setSyncStatus("idle");
-                  }}
-                >
-                  Stop mock
-                </button>
+            <button
+              className="secondary reset-weights"
+              onClick={() =>
+                setState((previous) => ({
+                  ...previous,
+                  weights: DEFAULT_STRATEGY_WEIGHTS,
+                }))
+              }
+            >
+              Reset weights to defaults
+            </button>
+            <p className="panel-hint">
+              Weights, pins, and avoids are yours alone — they don&apos;t change
+              what your league-mates see.
+            </p>
+          </section>
+
+          {adminView && (
+            <section className="panel admin-console">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Only you see this</p>
+                  <h2>League admin</h2>
+                </div>
+                <span>
+                  {pendingCount
+                    ? `${pendingCount} awaiting approval`
+                    : "all members approved"}
+                </span>
               </div>
-              <p className="sync-status">Status: {syncStatus}</p>
-            </div>
-            {me?.role === "admin" && (
-              <div className="member-list">
-                <p className="eyebrow">League-mates</p>
+
+              <div className="admin-section">
+                <p className="admin-label">Members</p>
                 {adminUsers.map((user) => (
-                  <div className="member-row" key={user.id}>
-                    <span>
-                      {user.displayName} · {user.status}
-                      {user.draftSlot ? ` · slot ${user.draftSlot}` : ""}
-                    </span>
-                    {user.status === "pending" ? (
-                      <button
-                        className="secondary"
-                        onClick={async () => {
-                          await fetch("/api/admin/users", {
-                            method: "PATCH",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ id: user.id, status: "active" }),
-                          });
-                          setMembers((previous) =>
-                            previous.map((member) =>
-                              member.id === user.id ? { ...member, status: "active" } : member,
-                            ),
-                          );
-                          setAdminUsers((previous) =>
-                            previous.map((member) =>
-                              member.id === user.id ? { ...member, status: "active" } : member,
-                            ),
-                          );
-                        }}
-                      >
-                        Approve
-                      </button>
-                    ) : (
-                      <button
-                        className="secondary"
-                        onClick={async () => {
-                          if (user.role === "admin") return;
-                          await fetch("/api/admin/users", {
-                            method: "PATCH",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ id: user.id, status: "pending" }),
-                          });
-                          setAdminUsers((previous) =>
-                            previous.map((member) =>
-                              member.id === user.id ? { ...member, status: "pending" } : member,
-                            ),
-                          );
-                        }}
-                      >
-                        Revoke
-                      </button>
-                    )}
+                  <div className="admin-member" key={user.id}>
+                    <div className="admin-member-head">
+                      <strong>{user.displayName}</strong>
+                      <span className={`member-status ${user.status}`}>
+                        {user.role === "admin" ? "admin" : user.status}
+                      </span>
+                      {user.status === "pending" ? (
+                        <button onClick={() => patchUser(user.id, { status: "active" })}>
+                          Approve
+                        </button>
+                      ) : (
+                        user.role !== "admin" && (
+                          <button
+                            className="secondary"
+                            onClick={() => patchUser(user.id, { status: "pending" })}
+                          >
+                            Revoke
+                          </button>
+                        )
+                      )}
+                    </div>
+                    <div className="admin-member-fields">
+                      <label>
+                        Slot
+                        <select
+                          value={user.draftSlot ?? ""}
+                          onChange={(event) =>
+                            patchUser(user.id, {
+                              draftSlot: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            })
+                          }
+                        >
+                          <option value="">—</option>
+                          {Array.from({ length: 12 }, (_, index) => (
+                            <option key={index + 1} value={index + 1}>
+                              {index + 1}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Team
+                        <input
+                          type="text"
+                          defaultValue={user.teamName ?? ""}
+                          placeholder="Team name"
+                          onBlur={(event) => {
+                            const value = event.target.value.trim();
+                            if (value !== (user.teamName ?? "")) {
+                              patchUser(user.id, { teamName: value || null });
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
                   </div>
                 ))}
+                {adminUsers.length <= 1 && (
+                  <p className="admin-hint">
+                    Friends show up here after they sign in with Yahoo.
+                    Approve them to unlock the board.
+                  </p>
+                )}
               </div>
-            )}
-          </section>
+
+              <div className="admin-section">
+                <p className="admin-label">Mock harness &amp; live sync</p>
+                <div className="sync-panel">
+                  <label>
+                    League key
+                    <input
+                      type="text"
+                      placeholder="mock.abc123 or 461.l.12345"
+                      value={leagueKey}
+                      onChange={(event) => setLeagueKey(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Poll every
+                    <select
+                      value={syncIntervalSec}
+                      onChange={(event) => setSyncIntervalSec(Number(event.target.value))}
+                    >
+                      {[3, 5, 8, 15, 30].map((value) => (
+                        <option key={value} value={value}>
+                          {value}s
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="sync-actions">
+                    <button className="secondary" onClick={startMockHarness}>
+                      Start mock harness
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={async () => {
+                        if (!leagueKey.trim()) return;
+                        await fetch(
+                          `/api/yahoo/mock?leagueKey=${encodeURIComponent(leagueKey.trim())}`,
+                          { method: "DELETE" },
+                        );
+                        setNotice(`Stopped mock ${leagueKey}.`);
+                        setSyncStatus("idle");
+                      }}
+                    >
+                      Stop mock
+                    </button>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={syncPaused}
+                      onChange={(event) => setSyncPaused(event.target.checked)}
+                    />
+                    Pause live synchronization
+                  </label>
+                  <p className="sync-status">Status: {syncStatus}</p>
+                </div>
+              </div>
+            </section>
+          )}
 
           <section className="panel exports">
             <button className="secondary" onClick={() => download("draft-results.json", JSON.stringify(state.draft, null, 2), "application/json")}>
@@ -1048,12 +1158,6 @@ export function DraftAssistant() {
             </button>
             <button className="secondary" onClick={() => download("draft-results.csv", toCsv(state), "text/csv")}>
               Export CSV
-            </button>
-            <button
-              className="secondary"
-              onClick={() => startSession("mock")}
-            >
-              Reset to new mock
             </button>
           </section>
         </aside>

@@ -1,10 +1,45 @@
 import { NextResponse } from "next/server";
 import { getValidYahooAccessToken } from "@/adapters/yahoo/oauth";
 import { YahooApi } from "@/adapters/yahoo/yahoo-api";
+import type { YahooPlayerInfo } from "@/adapters/yahoo/parsers";
 import { loadMockSnapshot } from "@/adapters/yahoo/mock-store";
 import { prisma } from "@/persistence/prisma";
 
 export const runtime = "nodejs";
+
+// Yahoo draft results only carry player keys. Resolve keys to names once and
+// remember them for the life of the server process so polling stays cheap.
+const playerInfoCache = new Map<string, YahooPlayerInfo>();
+
+async function fetchRealSnapshot(leagueKey: string) {
+  const api = new YahooApi(await getValidYahooAccessToken());
+  const snapshot = await api.snapshot(leagueKey);
+  const unresolvedKeys = [
+    ...new Set(
+      snapshot.draftResults
+        .map((pick) => pick.playerKey)
+        .filter((key) => key && !playerInfoCache.has(key)),
+    ),
+  ];
+  if (unresolvedKeys.length > 0) {
+    const infos = await api.getPlayersByKeys(leagueKey, unresolvedKeys);
+    for (const [key, info] of infos) playerInfoCache.set(key, info);
+  }
+  return {
+    ...snapshot,
+    draftResults: snapshot.draftResults.map((pick) => {
+      const info = playerInfoCache.get(pick.playerKey);
+      return info
+        ? {
+            ...pick,
+            playerName: info.name,
+            playerPosition: info.position,
+            playerTeam: info.team,
+          }
+        : pick;
+    }),
+  };
+}
 
 export async function GET(request: Request) {
   const leagueKey =
@@ -20,7 +55,7 @@ export async function GET(request: Request) {
   try {
     const snapshot = leagueKey.startsWith("mock.")
       ? await loadMockSnapshot(leagueKey)
-      : await new YahooApi(await getValidYahooAccessToken()).snapshot(leagueKey);
+      : await fetchRealSnapshot(leagueKey);
     if (!snapshot) {
       return NextResponse.json(
         { error: `No mock draft running for ${leagueKey}` },

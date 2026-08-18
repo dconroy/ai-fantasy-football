@@ -1,5 +1,6 @@
 export * from "./draft";
 export * from "./identity";
+export * from "./lineup";
 export * from "./recommendation";
 export * from "./roster";
 export * from "./snake";

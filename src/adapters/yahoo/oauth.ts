@@ -204,8 +204,18 @@ export async function exchangeYahooCode(code: string): Promise<YahooLoginResult>
 
   const expiresAt = new Date(Date.now() + Math.max(60, tokens.expires_in) * 1_000);
   const isFirst = !existing && userCount === 0;
+  // If TOKEN_ENCRYPTION_KEY was rotated, stored tokens can't be decrypted
+  // anymore. That's fine on login — Yahoo just issued fresh ones.
+  let priorRefresh: string | undefined;
+  if (existing?.encryptedRefreshToken) {
+    try {
+      priorRefresh = decrypt(existing.encryptedRefreshToken);
+    } catch {
+      priorRefresh = undefined;
+    }
+  }
   const user = existing
-    ? await persistUserTokens(existing, tokens, existing.encryptedRefreshToken ? decrypt(existing.encryptedRefreshToken) : undefined)
+    ? await persistUserTokens(existing, tokens, priorRefresh)
     : await prisma.user.create({
         data: {
           yahooGuid: guid,
@@ -253,19 +263,32 @@ export async function getYahooConnectionStatus(user?: User | null) {
     : { connected: false };
 }
 
+// Draft-night polling means many overlapping requests can hit the refresh
+// window at once. Share one in-flight refresh per user instead of racing
+// Yahoo with duplicate refresh_token calls.
+const inflightRefreshes = new Map<string, Promise<string>>();
+
 async function refreshUserToken(user: User) {
   if (user.expiresAt.getTime() > Date.now() + 5 * 60_000) {
     return decrypt(user.encryptedAccessToken);
   }
-  const refreshToken = decrypt(user.encryptedRefreshToken);
-  const tokens = await requestTokens(
-    new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-    }),
-  );
-  await persistUserTokens(user, tokens, refreshToken);
-  return tokens.access_token;
+  const existing = inflightRefreshes.get(user.id);
+  if (existing) return existing;
+
+  const refresh = (async () => {
+    const refreshToken = decrypt(user.encryptedRefreshToken);
+    const tokens = await requestTokens(
+      new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
+    );
+    await persistUserTokens(user, tokens, refreshToken);
+    return tokens.access_token;
+  })().finally(() => inflightRefreshes.delete(user.id));
+
+  inflightRefreshes.set(user.id, refresh);
+  return refresh;
 }
 
 export async function getValidYahooAccessToken(preferredUser?: User | null) {

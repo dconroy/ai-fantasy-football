@@ -1,4 +1,23 @@
 import { XMLParser } from "fast-xml-parser";
+import {
+  list,
+  parseLeagueMeta,
+  parseLeaguePlayers,
+  parsePlayerInfos,
+  parseRoster,
+  parseScoreboard,
+  parseStandings,
+  parseTeams,
+  parseTransactions,
+  type YahooFreeAgent,
+  type YahooLeagueMeta,
+  type YahooMatchup,
+  type YahooPlayerInfo,
+  type YahooRosterPlayer,
+  type YahooStandingsRow,
+  type YahooTeamInfo,
+  type YahooTransaction,
+} from "./parsers";
 
 const API_ROOT = "https://fantasysports.yahooapis.com/fantasy/v2";
 
@@ -35,11 +54,6 @@ export interface YahooFantasyReadAdapter {
   getDraftResults(leagueKey: string): Promise<YahooDraftResult[]>;
   getAvailablePlayers(leagueKey: string, start?: number): Promise<unknown>;
   getUserNflLeagues(): Promise<YahooLeagueSummary[]>;
-}
-
-function list<T>(value: T | T[] | undefined): T[] {
-  if (!value) return [];
-  return Array.isArray(value) ? value : [value];
 }
 
 export class YahooApi implements YahooFantasyReadAdapter {
@@ -138,6 +152,89 @@ export class YahooApi implements YahooFantasyReadAdapter {
           league.draft_status === undefined ? undefined : String(league.draft_status),
       }))
       .filter((league) => league.leagueKey.length > 0);
+  }
+
+  async getTeams(leagueKey: string): Promise<YahooTeamInfo[]> {
+    return parseTeams(
+      await this.get(`/league/${encodeURIComponent(leagueKey)}/teams`),
+    );
+  }
+
+  async getRoster(teamKey: string, week?: number): Promise<YahooRosterPlayer[]> {
+    const weekParam = week ? `;week=${week}` : "";
+    return parseRoster(
+      await this.get(`/team/${encodeURIComponent(teamKey)}/roster${weekParam}`),
+    );
+  }
+
+  async getLeagueMeta(leagueKey: string): Promise<YahooLeagueMeta> {
+    return parseLeagueMeta(
+      await this.get(`/league/${encodeURIComponent(leagueKey)}/settings`),
+    );
+  }
+
+  async getStandings(leagueKey: string): Promise<YahooStandingsRow[]> {
+    return parseStandings(
+      await this.get(`/league/${encodeURIComponent(leagueKey)}/standings`),
+    );
+  }
+
+  async getScoreboard(leagueKey: string, week?: number): Promise<YahooMatchup[]> {
+    const weekParam = week ? `;week=${week}` : "";
+    return parseScoreboard(
+      await this.get(
+        `/league/${encodeURIComponent(leagueKey)}/scoreboard${weekParam}`,
+      ),
+    );
+  }
+
+  async getTransactions(
+    leagueKey: string,
+    count = 15,
+  ): Promise<YahooTransaction[]> {
+    return parseTransactions(
+      await this.get(
+        `/league/${encodeURIComponent(leagueKey)}/transactions;count=${count}`,
+      ),
+    );
+  }
+
+  async getFreeAgents(
+    leagueKey: string,
+    options: { position?: string; count?: number; sort?: "AR" | "OR" } = {},
+  ): Promise<YahooFreeAgent[]> {
+    const position = options.position ? `;position=${options.position}` : "";
+    const count = options.count ?? 25;
+    const league = encodeURIComponent(leagueKey);
+    const build = (sort: string) =>
+      `/league/${league}/players;status=FA${position};sort=${sort};count=${count}/percent_owned`;
+    try {
+      return parseLeaguePlayers(await this.get(build(options.sort ?? "AR")));
+    } catch {
+      // Actual-rank sort can fail before any games are played; fall back to
+      // Yahoo's overall pre-season rank.
+      return parseLeaguePlayers(await this.get(build("OR")));
+    }
+  }
+
+  /** Resolve Yahoo player keys to names/teams, batched 25 keys per request. */
+  async getPlayersByKeys(
+    leagueKey: string,
+    playerKeys: readonly string[],
+  ): Promise<Map<string, YahooPlayerInfo>> {
+    const resolved = new Map<string, YahooPlayerInfo>();
+    for (let start = 0; start < playerKeys.length; start += 25) {
+      const batch = playerKeys.slice(start, start + 25);
+      const body = await this.get(
+        `/league/${encodeURIComponent(leagueKey)}/players;player_keys=${batch
+          .map(encodeURIComponent)
+          .join(",")}`,
+      );
+      for (const info of parsePlayerInfos(body)) {
+        resolved.set(info.playerKey, info);
+      }
+    }
+    return resolved;
   }
 
   async snapshot(leagueKey: string): Promise<YahooSyncSnapshot> {
