@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 interface LineupPlayerDto {
@@ -197,7 +198,7 @@ export function WeeklyHq() {
           </div>
         </div>
         <div className="status-row">
-          <a className="status" href="/">Draft board</a>
+          <Link className="status" href="/">Draft board</Link>
           <button className="icon-button" onClick={() => void load()} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh"}
           </button>

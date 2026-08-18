@@ -35,6 +35,7 @@ export interface MemberSeat {
   readonly teamName: string | null;
   readonly role: string;
   readonly status: string;
+  readonly lastSeenAt: string | null;
 }
 
 function parseJson<T>(value: string, fallback: T): T {
@@ -147,9 +148,22 @@ export async function listMemberSeats(): Promise<MemberSeat[]> {
       teamName: true,
       role: true,
       status: true,
+      lastSeenAt: true,
     },
   });
-  return users;
+  return users.map((user) => ({
+    ...user,
+    lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
+  }));
+}
+
+/** Record activity for presence dots. Throttled to one write per 30s. */
+export async function touchLastSeen(user: User): Promise<void> {
+  const last = user.lastSeenAt?.getTime() ?? 0;
+  if (Date.now() - last < 30_000) return;
+  await prisma.user
+    .update({ where: { id: user.id }, data: { lastSeenAt: new Date() } })
+    .catch(() => undefined);
 }
 
 export async function saveSharedDraft(input: {

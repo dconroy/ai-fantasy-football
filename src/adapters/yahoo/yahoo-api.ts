@@ -73,7 +73,20 @@ export class YahooApi implements YahooFantasyReadAdapter {
       cache: "no-store",
     });
     if (!response.ok) {
-      throw new Error(`Yahoo request failed with HTTP ${response.status}`);
+      const body = await response.text().catch(() => "");
+      if (body.includes("additional_authorization_required")) {
+        throw new Error(
+          "Yahoo hasn't approved this app for Fantasy Sports API access yet. " +
+            "Check your application status at sports.yahoo.com/developer — " +
+            "sign in with Yahoo again once it's approved.",
+        );
+      }
+      const description = /<yahoo:description>([^<]+)</.exec(body)?.[1];
+      throw new Error(
+        description
+          ? `Yahoo error: ${description.trim()}`
+          : `Yahoo request failed with HTTP ${response.status}`,
+      );
     }
     return this.parser.parse(await response.text());
   }

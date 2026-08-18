@@ -8,6 +8,7 @@ import {
   replacePlayers,
   resetSharedDraft,
   saveSharedDraft,
+  touchLastSeen,
   userPrefs,
 } from "@/persistence/league-draft";
 import type { DraftState, Player } from "@/domain";
@@ -15,10 +16,11 @@ import type { DraftState, Player } from "@/domain";
 export const runtime = "nodejs";
 
 async function payload() {
-  const [shared, members, user] = await Promise.all([
+  const user = await requireActiveUser();
+  await touchLastSeen(user);
+  const [shared, members] = await Promise.all([
     getOrCreateLeagueDraft(),
     listMemberSeats(),
-    requireActiveUser(),
   ]);
   const prefs = userPrefs(user);
   return {

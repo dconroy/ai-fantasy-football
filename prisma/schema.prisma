@@ -91,6 +91,7 @@ model User {
   avoidsJson            String   @default("[]")
   weightsJson           String?
   darkMode              Boolean  @default(false)
+  lastSeenAt            DateTime?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }

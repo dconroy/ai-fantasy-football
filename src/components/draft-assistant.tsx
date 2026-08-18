@@ -53,6 +53,21 @@ interface MemberSeat {
   teamName: string | null;
   role: string;
   status: string;
+  lastSeenAt?: string | null;
+}
+
+function presenceLabel(lastSeenAt?: string | null): {
+  online: boolean;
+  label: string;
+} {
+  if (!lastSeenAt) return { online: false, label: "not seen yet" };
+  const ageMs = Date.now() - Date.parse(lastSeenAt);
+  if (ageMs < 90_000) return { online: true, label: "here now" };
+  const minutes = Math.round(ageMs / 60_000);
+  if (minutes < 60) return { online: false, label: `${minutes}m ago` };
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return { online: false, label: `${hours}h ago` };
+  return { online: false, label: `${Math.round(hours / 24)}d ago` };
 }
 
 interface MeState {
@@ -189,6 +204,8 @@ export function DraftAssistant() {
   const [me, setMe] = useState<MeState | null>(null);
   const [members, setMembers] = useState<MemberSeat[]>([]);
   const [adminUsers, setAdminUsers] = useState<MemberSeat[]>([]);
+  const [launcherOpen, setLauncherOpen] = useState(false);
+  const [liveKeyDraft, setLiveKeyDraft] = useState("");
   const importRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef(state);
   useEffect(() => {
@@ -310,6 +327,11 @@ export function DraftAssistant() {
     ? Math.max(0, nextMine.overall - current.overall)
     : 0;
   const isMyTurn = current.slot === state.draft.userSlot;
+  useEffect(() => {
+    document.title = isMyTurn
+      ? "🚨 YOUR PICK — Conroy's AI Draft Dojo"
+      : "Conroy's AI Draft Dojo";
+  }, [isMyTurn]);
   const available = useMemo(
     () => availablePlayers(state.draft, state.players),
     [state.draft, state.players],
@@ -487,6 +509,8 @@ export function DraftAssistant() {
       setNotice("Load Chen or import a CSV before starting the mock harness.");
       return;
     }
+    if (!confirmClearBoard()) return;
+    setLauncherOpen(false);
     const key = `mock.${Math.random().toString(36).slice(2, 8)}`;
     setNotice("Starting mock draft harness…");
     const response = await fetch("/api/yahoo/mock", {
@@ -523,15 +547,36 @@ export function DraftAssistant() {
     setSelected(null);
   }
 
-  async function startSession(mode: "mock" | "live") {
-    if (
-      state.draft.picks.length > 0 &&
-      !window.confirm(
-        `Clear all ${state.draft.picks.length} recorded picks and start a clean ${mode} draft?`,
+  function confirmClearBoard() {
+    return (
+      state.draft.picks.length === 0 ||
+      window.confirm(
+        `Clear all ${state.draft.picks.length} recorded picks on the shared board and start fresh?`,
       )
-    ) {
+    );
+  }
+
+  async function startLive(rawKey: string) {
+    const key = rawKey.trim();
+    if (!key) {
+      setNotice("Enter your Yahoo league key first (looks like 461.l.12345).");
       return;
     }
+    if (!confirmClearBoard()) return;
+    setLauncherOpen(false);
+    setSelected(null);
+    setSyncPaused(false);
+    await mutateDraft(
+      "/api/draft",
+      { action: "reset", mode: "live", leagueKey: key },
+      `Live board armed for ${key}. On draft night, make picks in the Yahoo app — this board follows along automatically.`,
+    );
+    setLeagueKey(key);
+  }
+
+  async function startSession(mode: "mock" | "live") {
+    if (!confirmClearBoard()) return;
+    setLauncherOpen(false);
     setSelected(null);
     setSyncPaused(mode === "mock");
     await mutateDraft(
@@ -735,7 +780,12 @@ export function DraftAssistant() {
         <div className="status-row">
           <a className="status" href="/weekly">Weekly HQ</a>
           <span className={`status ${state.mode === "mock" ? "simulation" : "live"}`}>
-            ● {state.mode === "mock" ? "Mock draft" : "Live board"}
+            ●{" "}
+            {state.mode === "mock"
+              ? "Manual mock"
+              : state.leagueKey?.startsWith("mock.")
+                ? "Practice mock"
+                : "Live board"}
           </span>
           {yahooConnected ? (
             <span className="status connected">
@@ -774,7 +824,7 @@ export function DraftAssistant() {
         </div>
       )}
 
-      <section className="control-strip">
+      <section className={`control-strip ${isMyTurn ? "on-clock" : ""}`}>
         <label>
           Draft slot
           <select
@@ -792,7 +842,11 @@ export function DraftAssistant() {
           </select>
         </label>
         <div className="turn-indicator">
-          <strong>{isMyTurn ? "You’re on the clock" : `${picksUntilMyTurn} picks until your turn`}</strong>
+          <strong>
+            {isMyTurn
+              ? "🚨 YOU'RE ON THE CLOCK"
+              : `${picksUntilMyTurn} picks until your turn`}
+          </strong>
           <span>
             Pick {current.overall} · Round {current.round} · Slot {current.slot}
           </span>
@@ -820,11 +874,18 @@ export function DraftAssistant() {
               Undo
             </button>
             <span className="strip-spacer" />
-            <button className="secondary" onClick={() => startSession("mock")}>
-              New mock draft
-            </button>
-            <button className="live-button" onClick={() => startSession("live")}>
-              Prepare live board
+            <button
+              className="live-button"
+              onClick={() => {
+                setLiveKeyDraft(
+                  state.leagueKey && !state.leagueKey.startsWith("mock.")
+                    ? state.leagueKey
+                    : "",
+                );
+                setLauncherOpen(true);
+              }}
+            >
+              Start a draft…
             </button>
           </>
         ) : (
@@ -835,7 +896,104 @@ export function DraftAssistant() {
         )}
       </section>
 
+      <section className="presence-strip">
+        <span className="presence-title">League-mates</span>
+        {members.map((member) => {
+          const presence = presenceLabel(member.lastSeenAt);
+          const isMe = member.id === me?.id;
+          return (
+            <span
+              className={`presence-chip ${presence.online || isMe ? "online" : ""}`}
+              key={member.id}
+            >
+              <i />
+              {member.teamName || member.displayName}
+              {member.draftSlot ? ` · slot ${member.draftSlot}` : ""}
+              <small>
+                {member.status === "pending"
+                  ? "awaiting approval"
+                  : isMe
+                    ? "you"
+                    : presence.label}
+              </small>
+            </span>
+          );
+        })}
+        {members.length <= 1 && (
+          <small className="presence-empty">
+            Your league-mates appear here once they sign in with Yahoo.
+          </small>
+        )}
+      </section>
+
       <div className="notice" role="status">{notice}</div>
+
+      {launcherOpen && adminView && (
+        <div className="launcher-overlay" onClick={() => setLauncherOpen(false)}>
+          <div className="launcher" onClick={(event) => event.stopPropagation()}>
+            <div className="launcher-head">
+              <div>
+                <p className="eyebrow">Everyone shares this board</p>
+                <h2>Start a draft</h2>
+              </div>
+              <button className="icon-button" onClick={() => setLauncherOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="launcher-options">
+              <article>
+                <header>
+                  <h3>Practice mock</h3>
+                  <span className="launcher-badge">recommended</span>
+                </header>
+                <p>
+                  11 computer opponents pick for themselves every {syncIntervalSec}{" "}
+                  seconds. When it reaches your slot the room pauses until you
+                  confirm a pick — just like a real draft clock.
+                </p>
+                <button onClick={() => void startMockHarness()}>
+                  Start practice mock
+                </button>
+              </article>
+              <article>
+                <header>
+                  <h3>Manual mock</h3>
+                </header>
+                <p>
+                  Nothing happens on its own. You drive with “Simulate to my
+                  pick” and “Advance one”, and can record any pick by hand. Good
+                  for exploring strategies slowly.
+                </p>
+                <button className="secondary" onClick={() => void startSession("mock")}>
+                  Start manual mock
+                </button>
+              </article>
+              <article>
+                <header>
+                  <h3>Draft night — live</h3>
+                </header>
+                <p>
+                  Follows your real Yahoo draft. Everyone makes their actual
+                  picks in the Yahoo app; this board syncs them automatically
+                  and keeps recommendations current. Requires Yahoo API access.
+                </p>
+                <label className="launcher-key">
+                  League key
+                  <input
+                    type="text"
+                    placeholder="461.l.12345"
+                    value={liveKeyDraft}
+                    onChange={(event) => setLiveKeyDraft(event.target.value)}
+                  />
+                </label>
+                <button className="live-button" onClick={() => void startLive(liveKeyDraft)}>
+                  Arm the live board
+                </button>
+              </article>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="workspace">
         <aside className="panel recommendations">
