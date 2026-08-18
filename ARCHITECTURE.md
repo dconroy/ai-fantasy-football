@@ -139,6 +139,16 @@ calls `ensureFreshBoardPlayers()` (throttled) — see "Rankings pipeline".
      / 10 min per instance) refreshes the board's players **only while
      `picks.length === 0`**, so rankings never shift mid-draft. Admins can force a
      refresh via `/api/chen` ("Refresh now") or upload a CSV.
+3. **Player metadata backfill** — Chen's tier CSV has no team, bye, headshot, or
+   ownership columns, so `adapters/yahoo/player-meta.ts` pulls the top ~300 players
+   from Yahoo (team + full team name + `bye_weeks` + `image_url` + `percent_owned` +
+   injury status + `player_key`), cached in `DataImport` for 12h and keyed by
+   normalized name + position. `ensureBoardByes()` (`/api/draft` GET, throttled
+   30 min/instance) merges that onto any board player still missing a bye or photo,
+   which also powers the click-to-open player detail card in the UI. Best-effort: it
+   no-ops when Yahoo isn't connected, so fields simply stay blank until it is. Team
+   defenses aren't matched (Chen nickname vs Yahoo city name), so DEF metadata may
+   remain blank.
 
 ## Draft synchronization
 

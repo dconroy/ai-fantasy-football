@@ -3,6 +3,7 @@ import {
   list,
   parseLeagueMeta,
   parseLeaguePlayers,
+  parsePlayerCards,
   parsePlayerInfos,
   parseRoster,
   parseScoreboard,
@@ -12,6 +13,7 @@ import {
   type YahooFreeAgent,
   type YahooLeagueMeta,
   type YahooMatchup,
+  type YahooPlayerCard,
   type YahooPlayerInfo,
   type YahooRosterPlayer,
   type YahooStandingsRow,
@@ -208,6 +210,24 @@ export class YahooApi implements YahooFantasyReadAdapter {
     return parseTransactions(
       await this.get(
         `/league/${encodeURIComponent(leagueKey)}/transactions;count=${count}`,
+      ),
+    );
+  }
+
+  /**
+   * A page of league players with team, bye, headshot, and percent-owned
+   * metadata, sorted by Yahoo overall rank. Used to backfill Chen rankings
+   * (Chen's tier file carries none of this) and to power the player detail card.
+   * Bye weeks are an NFL-wide constant, so any league key works.
+   */
+  async getPlayerMeta(
+    leagueKey: string,
+    start = 0,
+    count = 25,
+  ): Promise<YahooPlayerCard[]> {
+    return parsePlayerCards(
+      await this.get(
+        `/league/${encodeURIComponent(leagueKey)}/players;sort=OR;start=${start};count=${count}/percent_owned`,
       ),
     );
   }

@@ -81,6 +81,19 @@ export interface YahooPlayerInfo {
   team: string;
 }
 
+export interface YahooPlayerCard {
+  playerKey: string;
+  name: string;
+  position: string;
+  team: string;
+  teamFull?: string;
+  byeWeek?: number;
+  imageUrl?: string;
+  percentOwned?: number;
+  status?: string;
+  injuryNote?: string;
+}
+
 export interface YahooLeagueMeta {
   name: string;
   currentWeek?: number;
@@ -130,6 +143,18 @@ function playerTeamAbbr(player: Raw): string {
 
 function playerByeWeek(player: Raw): number | undefined {
   return num(get(player, "bye_weeks", "week"));
+}
+
+function playerImage(player: Raw): string | undefined {
+  return (
+    str(player.image_url) ||
+    str(get(player, "headshot", "url")) ||
+    undefined
+  );
+}
+
+function playerTeamFull(player: Raw): string | undefined {
+  return str(player.editorial_team_full_name) || undefined;
 }
 
 export function parseTeams(body: unknown): YahooTeamInfo[] {
@@ -254,6 +279,26 @@ export function parseLeaguePlayers(body: unknown): YahooFreeAgent[] {
       status: str(player.status) || undefined,
       byeWeek: playerByeWeek(player),
       percentOwned: num(get(player, "percent_owned", "value")),
+    }))
+    .filter((player) => player.playerKey.length > 0);
+}
+
+export function parsePlayerCards(body: unknown): YahooPlayerCard[] {
+  const players = list<Raw>(
+    get(body, "fantasy_content", "league", "players", "player") as Raw | Raw[],
+  );
+  return players
+    .map((player) => ({
+      playerKey: str(player.player_key),
+      name: playerName(player),
+      position: str(player.display_position || player.primary_position),
+      team: playerTeamAbbr(player),
+      teamFull: playerTeamFull(player),
+      byeWeek: playerByeWeek(player),
+      imageUrl: playerImage(player),
+      percentOwned: num(get(player, "percent_owned", "value")),
+      status: str(player.status) || undefined,
+      injuryNote: str(player.injury_note) || undefined,
     }))
     .filter((player) => player.playerKey.length > 0);
 }

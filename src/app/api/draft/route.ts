@@ -3,6 +3,7 @@ import { AuthError, requireActiveUser } from "@/auth/current-user";
 import {
   ConflictError,
   draftStateFor,
+  ensureBoardByes,
   ensureFreshBoardPlayers,
   getOrCreateLeagueDraft,
   listMemberSeats,
@@ -40,6 +41,7 @@ async function payload() {
 export async function GET() {
   try {
     await ensureFreshBoardPlayers();
+    await ensureBoardByes();
     return NextResponse.json(await payload());
   } catch (error) {
     if (error instanceof AuthError) {

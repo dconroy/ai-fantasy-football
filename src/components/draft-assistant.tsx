@@ -213,6 +213,7 @@ export function DraftAssistant() {
   const [adminUsers, setAdminUsers] = useState<MemberSeat[]>([]);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [liveKeyDraft, setLiveKeyDraft] = useState("");
+  const [detailId, setDetailId] = useState<string | null>(null);
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
@@ -793,6 +794,21 @@ export function DraftAssistant() {
       (player) => player.id === selected && !avoids.includes(player.id),
     ) ?? recommendation.recommendations[0]?.player;
 
+  const detailPlayer = detailId
+    ? state.players.find((player) => player.id === detailId) ?? null
+    : null;
+  const detailRec = detailId
+    ? recommendation.recommendations.find((item) => item.player.id === detailId)
+    : undefined;
+  const detailPick = detailId
+    ? state.draft.picks.find((pick) => pick.player.id === detailId)
+    : undefined;
+
+  function openDetail(id: string) {
+    setSelected(id);
+    setDetailId(id);
+  }
+
   const isAdmin = me?.role === "admin";
   const adminView = isAdmin && !previewMember;
   const pendingCount = adminUsers.filter((user) => user.status === "pending").length;
@@ -1066,6 +1082,140 @@ export function DraftAssistant() {
         </div>
       )}
 
+      {detailPlayer && (
+        <div className="detail-overlay" onClick={() => setDetailId(null)}>
+          <div
+            className="detail-card"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <button
+              className="icon-button detail-close"
+              onClick={() => setDetailId(null)}
+            >
+              Close
+            </button>
+            <div className="detail-head">
+              {detailPlayer.imageUrl ? (
+                <Image
+                  className="detail-headshot"
+                  src={detailPlayer.imageUrl}
+                  alt={detailPlayer.name}
+                  width={96}
+                  height={96}
+                  unoptimized
+                />
+              ) : (
+                <div className="detail-headshot placeholder">
+                  {detailPlayer.name
+                    .split(/\s+/)
+                    .slice(0, 2)
+                    .map((part) => part[0])
+                    .join("")}
+                </div>
+              )}
+              <div>
+                <h2>{detailPlayer.name}</h2>
+                <p className="detail-sub">
+                  <span className={`position ${detailPlayer.position.toLowerCase()}`}>
+                    {detailPlayer.position}
+                  </span>
+                  <span>{detailPlayer.teamName || detailPlayer.team}</span>
+                  {detailPlayer.byeWeek ? <span>Bye {detailPlayer.byeWeek}</span> : null}
+                </p>
+                {detailPlayer.injuryStatus &&
+                detailPlayer.injuryStatus !== "HEALTHY" ? (
+                  <p className="detail-injury">{detailPlayer.injuryStatus}</p>
+                ) : null}
+                {detailPick ? (
+                  <p className="detail-drafted">
+                    Drafted · pick {detailPick.overall} (round {detailPick.round}
+                    {detailPick.slot === state.draft.userSlot ? ", yours" : ""})
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="detail-stats">
+              <div>
+                <span>Chen rank</span>
+                <strong>{detailPlayer.chenRank ?? "—"}</strong>
+              </div>
+              <div>
+                <span>Tier</span>
+                <strong>{detailPlayer.chenTier ? `T${detailPlayer.chenTier}` : "—"}</strong>
+              </div>
+              <div>
+                <span>ADP</span>
+                <strong>{detailPlayer.adp ?? "—"}</strong>
+              </div>
+              <div>
+                <span>Rostered</span>
+                <strong>
+                  {detailPlayer.percentOwned != null
+                    ? `${detailPlayer.percentOwned}%`
+                    : "—"}
+                </strong>
+              </div>
+              {detailPlayer.projectedPoints != null ? (
+                <div>
+                  <span>Proj pts</span>
+                  <strong>{detailPlayer.projectedPoints}</strong>
+                </div>
+              ) : null}
+            </div>
+
+            {detailRec ? (
+              <div className="detail-why">
+                <div className="detail-why-head">
+                  <strong>Why the model likes him</strong>
+                  <span>
+                    Score {detailRec.score.toFixed(1)} · {detailRec.suggestedRosterSlot}
+                  </span>
+                </div>
+                <ul>
+                  {detailRec.explanations.slice(0, 4).map((line, index) => (
+                    <li key={index}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <div className="detail-actions">
+              <button
+                className="secondary"
+                onClick={() => toggleList("pins", detailPlayer.id)}
+              >
+                {(state.pins ?? []).includes(detailPlayer.id) ? "Unpin ★" : "Pin ☆"}
+              </button>
+              <button
+                className="secondary"
+                onClick={() => toggleList("avoids", detailPlayer.id)}
+              >
+                {avoids.includes(detailPlayer.id) ? "Allow" : "Avoid"}
+              </button>
+              {isMyTurn && !detailPick ? (
+                <button
+                  className="confirm"
+                  onClick={() => {
+                    void confirm(detailPlayer);
+                    setDetailId(null);
+                  }}
+                >
+                  Confirm {detailPlayer.name}
+                </button>
+              ) : null}
+            </div>
+            {!detailPlayer.imageUrl ? (
+              <p className="detail-note">
+                Photo &amp; live team/bye fill in from Yahoo once connected.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      )}
+
       <section className="workspace">
         <aside className="panel recommendations">
           <div className="panel-heading">
@@ -1079,7 +1229,7 @@ export function DraftAssistant() {
             <article
               key={item.player.id}
               className={`recommendation ${index === 0 ? "first" : ""}`}
-              onClick={() => setSelected(item.player.id)}
+              onClick={() => openDetail(item.player.id)}
             >
               <div className="rank">{index + 1}</div>
               <div className="recommendation-copy">
@@ -1151,7 +1301,7 @@ export function DraftAssistant() {
               <div
                 className={`table-row ${selected === player.id ? "selected" : ""} ${avoids.includes(player.id) ? "avoided" : ""}`}
                 key={player.id}
-                onClick={() => setSelected(player.id)}
+                onClick={() => openDetail(player.id)}
                 role="row"
               >
                 <span>{player.chenRank ?? "—"}</span>

@@ -19,6 +19,14 @@ export interface Player {
   readonly projectedPoints?: number;
   readonly aliases?: readonly string[];
   readonly injuryStatus?: "HEALTHY" | "QUESTIONABLE" | "DOUBTFUL" | "OUT" | "IR";
+  /** Yahoo headshot URL, when enriched. */
+  readonly imageUrl?: string;
+  /** Full NFL team name (e.g. "Cincinnati Bengals"), when enriched. */
+  readonly teamName?: string;
+  /** Percent of Yahoo leagues that have this player rostered (0–100). */
+  readonly percentOwned?: number;
+  /** Yahoo player key, when enriched (used to fetch on-demand detail). */
+  readonly playerKey?: string;
   /** Optional externally-modelled probability, from 0 to 1, that the player lasts to the user's next turn. */
   readonly estimatedReturnProbability?: number;
 }

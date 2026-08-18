@@ -14,6 +14,10 @@ import {
   getFreshChenImport,
   readCachedChenImport,
 } from "@/adapters/chen/server-cache";
+import {
+  getPlayerMetaIndex,
+  playerMetaKey,
+} from "@/adapters/yahoo/player-meta";
 import type { User } from "@prisma/client";
 import type { Position } from "@/domain";
 
@@ -144,6 +148,89 @@ export async function ensureFreshBoardPlayers(): Promise<void> {
     });
   } catch {
     // Never let a rankings refresh break loading the board.
+  }
+}
+
+let lastByeCheck = 0;
+const BYE_CHECK_INTERVAL_MS = 30 * 60 * 1000; // per instance
+
+/** Map a Yahoo injury status code to our coarse injuryStatus enum. */
+function mapInjuryStatus(status?: string): Player["injuryStatus"] | undefined {
+  switch (status?.toUpperCase()) {
+    case "Q":
+      return "QUESTIONABLE";
+    case "D":
+      return "DOUBTFUL";
+    case "O":
+    case "PUP":
+    case "SUSP":
+    case "NA":
+      return "OUT";
+    case "IR":
+    case "IR-R":
+      return "IR";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Backfills team, bye week, headshot, percent-owned, and injury status onto the
+ * shared board from Yahoo, since Boris Chen's tier file carries none of it
+ * (byes would otherwise always render as "—" and there'd be no player photos).
+ * Throttled and best-effort: it no-ops once the pool is enriched, only touches
+ * players still missing data, and never breaks board loading.
+ */
+export async function ensureBoardByes(): Promise<void> {
+  if (Date.now() - lastByeCheck < BYE_CHECK_INTERVAL_MS) return;
+  lastByeCheck = Date.now();
+  try {
+    const current = await getOrCreateLeagueDraft();
+    // Built-in fixtures already carry byes; nothing to enrich.
+    if (current.source === "Built-in mock data") return;
+    const needsEnrichment = current.players.some(
+      (player) => player.byeWeek === undefined || player.imageUrl === undefined,
+    );
+    if (!needsEnrichment) return;
+
+    const index = await getPlayerMetaIndex();
+    if (!index) return;
+
+    let changed = false;
+    const players = current.players.map((player) => {
+      const hit = index.get(playerMetaKey(player.name, player.position));
+      if (!hit) return player;
+      const next: Player = {
+        ...player,
+        team:
+          player.team && player.team !== "FA"
+            ? player.team
+            : hit.team || player.team,
+        teamName: player.teamName ?? hit.teamFull,
+        byeWeek: player.byeWeek ?? hit.byeWeek,
+        imageUrl: player.imageUrl ?? hit.imageUrl,
+        percentOwned: player.percentOwned ?? hit.percentOwned,
+        playerKey: player.playerKey ?? hit.playerKey,
+        injuryStatus: player.injuryStatus ?? mapInjuryStatus(hit.status),
+      };
+      if (
+        next.team === player.team &&
+        next.teamName === player.teamName &&
+        next.byeWeek === player.byeWeek &&
+        next.imageUrl === player.imageUrl &&
+        next.percentOwned === player.percentOwned &&
+        next.playerKey === player.playerKey &&
+        next.injuryStatus === player.injuryStatus
+      ) {
+        return player;
+      }
+      changed = true;
+      return next;
+    });
+    if (!changed) return;
+    await saveSharedDraft({ players });
+  } catch {
+    // Enrichment is a nicety; never let it break loading the board.
   }
 }
 
