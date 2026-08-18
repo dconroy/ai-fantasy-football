@@ -9,7 +9,9 @@ import {
   type StrategyWeights,
 } from "@/domain";
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
+import { readCachedChenImport } from "@/adapters/chen/server-cache";
 import type { User } from "@prisma/client";
+import type { Position } from "@/domain";
 
 export const LEAGUE_DRAFT_ID = "full-contact-2026";
 
@@ -43,25 +45,58 @@ function parseJson<T>(value: string, fallback: T): T {
   }
 }
 
+function playersFromChenCache() {
+  return readCachedChenImport().then((cached) => {
+    if (!cached?.players.length) return null;
+    return {
+      players: cached.players.map((player) => ({
+        id: player.sourceId,
+        name: player.name,
+        position: player.position as Position,
+        team: player.team ?? "FA",
+        chenRank: player.overallRank,
+        chenTier: player.tier,
+        byeWeek: player.byeWeek,
+        adp: player.adp,
+      })),
+      importedAt: cached.importedAt,
+      source: cached.source,
+    };
+  });
+}
+
 export async function getOrCreateLeagueDraft(): Promise<SharedDraft> {
   const existing = await prisma.leagueDraft.findUnique({
     where: { id: LEAGUE_DRAFT_ID },
   });
-  if (existing && existing.playersJson !== "[]") {
+  const stillSynthetic =
+    !existing ||
+    existing.playersJson === "[]" ||
+    existing.source === "Built-in mock data";
+  if (existing && !stillSynthetic) {
     return toShared(existing);
   }
+
+  const chen = stillSynthetic ? await playersFromChenCache() : null;
+  const seed = chen ?? {
+    players: [...MOCK_PLAYERS],
+    importedAt: "Synthetic fixture",
+    source: "Built-in mock data",
+  };
+
   const created = await prisma.leagueDraft.upsert({
     where: { id: LEAGUE_DRAFT_ID },
     create: {
       id: LEAGUE_DRAFT_ID,
-      playersJson: JSON.stringify(MOCK_PLAYERS),
-      importedAt: "Synthetic fixture",
-      source: "Built-in mock data",
+      playersJson: JSON.stringify(seed.players),
+      importedAt: seed.importedAt,
+      source: seed.source,
     },
-    update:
-      existing && existing.playersJson === "[]"
-        ? { playersJson: JSON.stringify(MOCK_PLAYERS) }
-        : {},
+    update: {
+      playersJson: JSON.stringify(seed.players),
+      importedAt: seed.importedAt,
+      source: seed.source,
+    },
   });
   return toShared(created);
 }
