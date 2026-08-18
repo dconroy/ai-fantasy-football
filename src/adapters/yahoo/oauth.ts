@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/persistence/prisma";
 import type { User } from "@prisma/client";
 
@@ -70,9 +70,7 @@ export function createYahooAuthorizationUrl(state: string) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
   url.searchParams.set("language", "en-us");
-  const requested = process.env.YAHOO_OAUTH_SCOPE?.trim();
-  // openid only — Fantasy scopes are not granted yet and "profile" can 400 the consent screen.
-  const scope = requested || "openid";
+  const scope = process.env.YAHOO_OAUTH_SCOPE?.trim();
   if (scope) url.searchParams.set("scope", scope);
   return url;
 }
@@ -189,7 +187,12 @@ export async function exchangeYahooCode(code: string): Promise<YahooLoginResult>
     new URLSearchParams({ grant_type: "authorization_code", code }),
   );
   const profile = await yahooIdentityFromUserinfo(tokens.access_token);
-  const guid = yahooGuidFromTokens(tokens) ?? profile?.guid ?? null;
+  const guid =
+    yahooGuidFromTokens(tokens) ??
+    profile?.guid ??
+    (tokens.refresh_token
+      ? `yahoo-rt:${createHash("sha256").update(tokens.refresh_token).digest("hex").slice(0, 24)}`
+      : null);
   if (!guid) throw new Error("Yahoo did not return a user id");
   if (!tokens.refresh_token) throw new Error("Yahoo did not return a refresh token");
 
