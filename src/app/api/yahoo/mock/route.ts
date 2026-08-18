@@ -16,7 +16,7 @@ import {
   waitingSlot,
 } from "@/adapters/yahoo/mock-runner";
 
-const DEFAULT_AUTO_PICK_MS = 30000;
+const DEFAULT_AUTO_PICK_MS = 20000;
 
 export const runtime = "nodejs";
 

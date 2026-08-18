@@ -439,17 +439,26 @@ export function DraftAssistant() {
     setAutoPickAt(snapshot.autoPickAt ?? null);
     setWaitingSlotRemote(snapshot.waitingSlot ?? null);
     const remote = [...snapshot.draftResults].sort((a, b) => a.pick - b.pick);
-    const nextLocalOverall = current.draft.picks.length + 1;
+    const isMockHarness = leagueKey.startsWith("mock.");
+    // Source of truth for which seats pause is the snapshot — those are the
+    // seats the running mock actually froze at start. The live member list
+    // (`humanSlotList()`) can grow after the mock began (someone picks a slot),
+    // which would mislabel robot-filled seats as "waiting". Fall back to it only
+    // when a snapshot doesn't carry the set (e.g. a real Yahoo league).
+    const humanSlots = new Set(
+      snapshot.humanSlots && snapshot.humanSlots.length > 0
+        ? snapshot.humanSlots
+        : humanSlotList(),
+    );
     const nextLocalSlot = selectionForOverall(
-      nextLocalOverall,
+      current.draft.picks.length + 1,
       current.draft.teamCount,
     ).slot;
     if (remote.length <= current.draft.picks.length) {
-      const waitingHuman = new Set(humanSlotList()).has(nextLocalSlot);
       setSyncStatus(
         nextLocalSlot === current.draft.userSlot
-          ? `your turn · confirm locally (${current.draft.picks.length} picks)`
-          : waitingHuman && leagueKey.startsWith("mock.")
+          ? `your turn · confirm (${current.draft.picks.length} picks)`
+          : isMockHarness && humanSlots.has(nextLocalSlot)
             ? `waiting on slot ${nextLocalSlot} (${current.draft.picks.length} picks)`
             : `in sync · ${remote.length} picks`,
       );
@@ -461,8 +470,6 @@ export function DraftAssistant() {
     let draft = current.draft;
     let applied = 0;
     const unresolved: string[] = [];
-    const isMockHarness = leagueKey.startsWith("mock.");
-    const humanSlots = new Set(humanSlotList());
     // The mock only publishes *resolved* picks (robots, confirmed humans, and
     // auto-drafted humans) and always omits the seat currently on the clock, so
     // everything here is safe to apply in order. A human seat that never picks

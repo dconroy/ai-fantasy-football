@@ -168,7 +168,7 @@ Pure, deterministic BPA simulator with soft per-position caps.
 - `recordUserPick(config, playerId, now, expectedSlot?)` appends to whichever seat
   is on the clock (validating `expectedSlot` to block out-of-turn confirms) and
   rewinds `startedAtIso` so the next robot pick is exactly one interval out.
-- **Auto-draft** (`autoPickMs`, default 30s for multi-human mocks): `autoPickDeadline()`
+- **Auto-draft** (`autoPickMs`, default 20s for multi-human mocks): `autoPickDeadline()`
   is the epoch ms a pending human seat lapses; `autoPickIfDue()` picks best-available
   for that seat and re-uses `recordUserPick` with `now = deadline` so following robots
   resume from the deadline, not from wall-clock (no burst of skipped picks).
@@ -181,7 +181,7 @@ start of the sync + mock GET paths, so auto-picks flow to the shared board throu
 normal reconcile path (`appendSharedPick` is idempotent to absorb confirm races).
 Net effect: a practice mock pauses at **every** real manager's seat, so all managers
 rehearse simultaneously, each on their own screen, while robots fill unclaimed seats —
-and an absent manager is auto-drafted after 30s so the room never stalls.
+and an absent manager is auto-drafted after 20s so the room never stalls.
 
 ### Request flow: a mock pick (confirm → store → sync → board)
 
@@ -232,7 +232,7 @@ sequenceDiagram
     end
 
     rect rgb(255, 235, 238)
-    Note over Picker,Board: Fallback — nobody confirms within autoPickMs (30s)
+    Note over Picker,Board: Fallback — nobody confirms within autoPickMs (20s)
     Other->>SyncAPI: GET /api/yahoo/sync (a later poll)
     SyncAPI->>Store: advanceMockAutoPicks(now ≥ autoPickAt)
     Store->>Store: autoPickIfDue() → recordUserPick(BPA, now=deadline)<br/>under compare-and-set
