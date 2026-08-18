@@ -23,6 +23,18 @@ describe("Boris Chen CSV adapter", () => {
     expect(result.importedAt).toBe("2026-08-01T00:00:00.000Z");
   });
 
+  it("uses Chen Avg.Rank as ADP when ADP is absent", () => {
+    const result = parseChenCsv(
+      '"Rank","Player.Name","Tier","Position","Avg.Rank"\n1,"Ja\'Marr Chase","1","WR",1.6',
+    );
+    expect(result.players[0]).toMatchObject({
+      name: "Ja'Marr Chase",
+      overallRank: 1,
+      tier: 1,
+      adp: 1.6,
+    });
+  });
+
   it("normalizes DST and reports unusable rows", () => {
     const result = parseChenCsv(
       "Player,Pos,Tier\nPhiladelphia Eagles,D/ST,1\nMissing Position,,3",

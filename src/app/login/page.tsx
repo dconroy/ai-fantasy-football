@@ -13,11 +13,15 @@ export default function LoginPage() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioPlayCount = useRef(1);
 
-  const playAudio = useCallback(async () => {
+  const playAudio = useCallback(async (unmuted = true) => {
+    const audio = audioRef.current;
+    if (!audio) return false;
     try {
-      await audioRef.current?.play();
-      setAudioBlocked(false);
-      return true;
+      audio.muted = !unmuted;
+      if (unmuted) audio.volume = 1;
+      await audio.play();
+      setAudioBlocked(!unmuted);
+      return unmuted;
     } catch {
       setAudioBlocked(true);
       return false;
@@ -42,16 +46,21 @@ export default function LoginPage() {
     audioPlayCount.current = 1;
     const removeUnlockListeners = () => {
       window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("pointermove", unlockAudio);
+      window.removeEventListener("pointerenter", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
     const unlockAudio = () => {
-      void playAudio().then((played) => {
+      void playAudio(true).then((played) => {
         if (played) removeUnlockListeners();
       });
     };
     window.addEventListener("pointerdown", unlockAudio);
+    window.addEventListener("pointermove", unlockAudio);
+    window.addEventListener("pointerenter", unlockAudio);
     window.addEventListener("keydown", unlockAudio);
-    void playAudio().then((played) => {
+    void playAudio(false).then(() => undefined);
+    void playAudio(true).then((played) => {
       if (played) removeUnlockListeners();
     });
     return removeUnlockListeners;
@@ -80,14 +89,16 @@ export default function LoginPage() {
   const denied = error || Boolean(yahooError);
 
   return (
-    <main className="security-screen">
+    <main className="security-screen" onMouseEnter={() => void playAudio(true)}>
       <section className={`security-console ${denied ? "denied" : ""}`}>
         <div className="security-scanline" />
         <audio
           ref={audioRef}
           src="/media/magic-word"
           autoPlay
+          muted
           preload="auto"
+          onMouseEnter={() => void playAudio(true)}
           onEnded={() => {
             if (!audioRef.current || audioPlayCount.current >= 3) return;
             audioPlayCount.current += 1;
@@ -103,6 +114,7 @@ export default function LoginPage() {
           height={402}
           unoptimized
           priority
+          onMouseEnter={() => void playAudio(true)}
         />
         <div className="security-emblem" aria-hidden="true">
           <span>AI</span>

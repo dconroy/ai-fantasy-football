@@ -29,7 +29,7 @@ const aliases = {
   positionRank: ["Position.Rank", "Pos.Rank", "Position Rank", "position_rank"],
   overallRank: ["Overall.Rank", "Rank", "Overall Rank", "overall_rank"],
   bye: ["Bye", "Bye.Week", "bye_week"],
-  adp: ["ADP", "Average.Draft.Position", "adp"],
+  adp: ["ADP", "Average.Draft.Position", "Avg.Rank", "Avg Rank", "adp"],
 } as const;
 
 function value(row: Record<string, string>, keys: readonly string[]) {
