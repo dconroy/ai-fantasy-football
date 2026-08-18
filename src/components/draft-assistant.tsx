@@ -16,6 +16,7 @@ import {
   type StrategyWeights,
 } from "@/domain";
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for the dormant CSV-import fallback (importFile)
 import { parseChenCsv } from "@/adapters/chen/boris-chen";
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
 import { resolvePlayerIdentity } from "@/domain/identity";
@@ -40,6 +41,7 @@ interface SyncSnapshot {
   }>;
   waitingSlot?: number | null;
   humanSlots?: number[];
+  autoPickAt?: string | null;
   syncedAt: string;
 }
 
@@ -203,12 +205,14 @@ export function DraftAssistant() {
   const [leagueKey, setLeagueKey] = useState("");
   const [syncIntervalSec, setSyncIntervalSec] = useState(5);
   const [syncStatus, setSyncStatus] = useState<string>("idle");
+  const [autoPickAt, setAutoPickAt] = useState<string | null>(null);
+  const [waitingSlotRemote, setWaitingSlotRemote] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [me, setMe] = useState<MeState | null>(null);
   const [members, setMembers] = useState<MemberSeat[]>([]);
   const [adminUsers, setAdminUsers] = useState<MemberSeat[]>([]);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [liveKeyDraft, setLiveKeyDraft] = useState("");
-  const importRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
@@ -349,6 +353,23 @@ export function DraftAssistant() {
       ? "🚨 YOUR PICK — Conroy's AI Draft Dojo"
       : "Conroy's AI Draft Dojo";
   }, [isMyTurn]);
+  // Tick once a second only while an auto-draft deadline is pending, so the
+  // countdown updates without re-rendering the board the rest of the time.
+  useEffect(() => {
+    if (!autoPickAt) return;
+    setNowTick(Date.now());
+    const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [autoPickAt]);
+  const autoPickSeconds = autoPickAt
+    ? Math.max(0, Math.ceil((Date.parse(autoPickAt) - nowTick) / 1000))
+    : null;
+  // Only surface the auto-draft countdown when the board is actually parked on
+  // the seat that will be auto-drafted (not while robots ahead of them resolve).
+  const showAutoCountdown =
+    autoPickSeconds !== null &&
+    waitingSlotRemote !== null &&
+    waitingSlotRemote === current.slot;
   const available = useMemo(
     () => availablePlayers(state.draft, state.players),
     [state.draft, state.players],
@@ -415,6 +436,8 @@ export function DraftAssistant() {
 
   function reconcileRemote(snapshot: SyncSnapshot) {
     const current = stateRef.current;
+    setAutoPickAt(snapshot.autoPickAt ?? null);
+    setWaitingSlotRemote(snapshot.waitingSlot ?? null);
     const remote = [...snapshot.draftResults].sort((a, b) => a.pick - b.pick);
     const nextLocalOverall = current.draft.picks.length + 1;
     const nextLocalSlot = selectionForOverall(
@@ -440,20 +463,12 @@ export function DraftAssistant() {
     const unresolved: string[] = [];
     const isMockHarness = leagueKey.startsWith("mock.");
     const humanSlots = new Set(humanSlotList());
+    // The mock only publishes *resolved* picks (robots, confirmed humans, and
+    // auto-drafted humans) and always omits the seat currently on the clock, so
+    // everything here is safe to apply in order. A human seat that never picks
+    // is auto-drafted server-side after the deadline and shows up as a normal
+    // pick — that's how the board keeps moving when someone steps away.
     for (const pick of remote.slice(current.draft.picks.length)) {
-      const nextOverall = draft.picks.length + 1;
-      const nextSlot = selectionForOverall(nextOverall, draft.teamCount).slot;
-      // In a real Yahoo draft everyone's pick shows up in draft results, so
-      // apply them all. In a mock, the harness pauses at every human seat until
-      // that person confirms locally, so stop when we reach one.
-      if (isMockHarness && humanSlots.has(nextSlot)) {
-        unresolved.push(
-          nextSlot === draft.userSlot
-            ? `pick ${nextOverall}: your turn — confirm locally to advance`
-            : `pick ${nextOverall}: waiting on slot ${nextSlot} to confirm`,
-        );
-        break;
-      }
       const mockPlayer = pick.playerKey ? mockLookup.get(pick.playerKey) : undefined;
       const query = mockPlayer?.name ?? pick.playerName ?? "";
       const team = mockPlayer?.team ?? pick.playerTeam;
@@ -487,9 +502,19 @@ export function DraftAssistant() {
     }
     if (unresolved.length) {
       setSyncStatus(`${remote.length} remote · stopped at ${unresolved[0]}`);
-    } else {
-      setSyncStatus(`in sync · ${remote.length} picks`);
+      return;
     }
+    const nextSlot = selectionForOverall(
+      draft.picks.length + 1,
+      draft.teamCount,
+    ).slot;
+    setSyncStatus(
+      nextSlot === draft.userSlot
+        ? `your turn · confirm (${draft.picks.length} picks)`
+        : isMockHarness && humanSlots.has(nextSlot)
+          ? `waiting on slot ${nextSlot} (${draft.picks.length} picks)`
+          : `in sync · ${draft.picks.length} picks`,
+    );
   }
 
   useEffect(() => {
@@ -683,6 +708,11 @@ export function DraftAssistant() {
     if (key === "avoids" && selected === id) setSelected(null);
   }
 
+  // Dormant break-glass helpers: the board auto-loads and refreshes Boris Chen
+  // tiers server-side, so these aren't wired to any button. Kept here so a
+  // manual "Import CSV" / "Refresh now" control can be re-added in seconds if
+  // Chen's site is ever unreachable on draft night.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function importFile(file?: File) {
     if (!file) return;
     const parsed = parseChenCsv(await file.text(), file.name);
@@ -712,6 +742,7 @@ export function DraftAssistant() {
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function fetchChen() {
     setNotice("Loading public Chen PPR data…");
     try {
@@ -871,11 +902,16 @@ export function DraftAssistant() {
         <div className="turn-indicator">
           <strong>
             {isMyTurn
-              ? "🚨 YOU'RE ON THE CLOCK"
+              ? showAutoCountdown
+                ? `🚨 YOU'RE ON THE CLOCK — auto-draft in ${autoPickSeconds}s`
+                : "🚨 YOU'RE ON THE CLOCK"
               : `${picksUntilMyTurn} picks until your turn`}
           </strong>
           <span>
             Pick {current.overall} · Round {current.round} · Slot {current.slot}
+            {!isMyTurn && showAutoCountdown
+              ? ` · slot ${current.slot} auto-drafts in ${autoPickSeconds}s`
+              : ""}
           </span>
         </div>
         {adminView ? (
@@ -1068,7 +1104,7 @@ export function DraftAssistant() {
             disabled={!isMyTurn || !selectedPlayer}
             onClick={() => selectedPlayer && confirm(selectedPlayer)}
           >
-            Confirm {selectedPlayer?.name ?? "pick"} locally
+            Confirm {selectedPlayer?.name ?? "pick"}
           </button>
           <p className="safety-note">
             Picks are recorded on this board only — make the real pick in the Yahoo app.
@@ -1081,23 +1117,11 @@ export function DraftAssistant() {
               <p className="eyebrow">Chen-first rankings</p>
               <h2>Best available <span>{available.length}</span></h2>
             </div>
-            {adminView && (
-              <div className="import-actions">
-                <button className="secondary" onClick={fetchChen}>Fetch Chen PPR</button>
-                <button className="secondary" onClick={() => importRef.current?.click()}>
-                  Import CSV
-                </button>
-                <input
-                  ref={importRef}
-                  hidden
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={(event) => importFile(event.target.files?.[0])}
-                />
-              </div>
-            )}
           </div>
-          <p className="data-source">{state.source} · {state.importedAt}</p>
+          <p className="data-source">
+            {state.source} · {state.importedAt}
+            {!state.source?.startsWith("Built-in") && " · auto-updated"}
+          </p>
           <div className="filters">
             <input
               placeholder="Search players or teams"

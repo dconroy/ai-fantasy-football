@@ -1,0 +1,296 @@
+# Architecture (technical)
+
+Engineering companion to `HOW-IT-WORKS.md`. This describes how the app is built,
+how requests flow, and where each responsibility lives.
+
+## Stack
+
+| Concern | Choice |
+|---|---|
+| Framework | Next.js 15 (App Router) + React 19, TypeScript |
+| Styling | Tailwind v4 (PostCSS) + hand-written `globals.css` |
+| Data source (rankings) | Boris Chen weekly PPR tiers (CSV) |
+| Data source (league) | Yahoo Fantasy API v2 (read-only, XML) |
+| ORM / DB | Prisma 6 → Postgres (Neon in prod) |
+| XML / CSV parsing | `fast-xml-parser`, `papaparse` |
+| Tests | Vitest (unit), Playwright (e2e) |
+| Hosting | Vercel; DB on Neon |
+
+Runtime note: every route that touches Prisma, Node crypto, or `fetch` with
+streaming sets `export const runtime = "nodejs"` (not edge).
+
+## Directory map
+
+```
+src/
+  app/                 # App Router: pages + route handlers
+    api/               # server endpoints (see "HTTP surface")
+    login/ pending/    # auth pages
+    page.tsx           # draft board host -> <DraftAssistant/>
+    weekly/page.tsx    # in-season host -> <WeeklyHq/>
+    media/             # streams the login GIF + MP3
+  adapters/            # I/O at the edges (impure)
+    chen/              # CSV parse + DB-cached fetch of Boris Chen
+    yahoo/             # OAuth, API client, XML parsers, mock engine
+  domain/              # pure logic, no I/O (snake math, recs, lineup, identity)
+  persistence/         # Prisma client + shared-draft repository
+  auth/                # house-password gate, session tokens, current user
+  config/              # scoring defaults / weights
+  fixtures/            # synthetic players used before real data loads
+  middleware.ts        # two-stage auth gate for every request
+prisma/                # schema + SQL migrations
+tests/                 # unit + e2e
+```
+
+The hard rule: **`domain/` is pure and framework-independent** — it imports
+nothing from `app/`, `adapters/`, or Prisma, so it's trivially unit-testable.
+`adapters/` and `persistence/` own all I/O. `app/` wires them together.
+
+## Authentication (two gates)
+
+`middleware.ts` runs on every non-public path and enforces two layers in order:
+
+1. **House password** — `ACCESS_COOKIE_NAME` cookie, validated against
+   `APP_ACCESS_PASSWORD` (`auth/access.ts`). This is the "magic word" gate.
+2. **Yahoo identity** — `SESSION_COOKIE_NAME`, an HMAC-signed token
+   (`auth/session.ts`) carrying `{ userId, status, role, exp }`. Missing → redirect
+   to `/login?step=yahoo`. `status === "pending"` → redirect to `/pending` (only
+   `/api/me` and `/pending` are reachable).
+
+Public paths: `/login`, the `/api/auth/*` endpoints, `/api/yahoo/callback`, and
+`/media/*`. `/api/yahoo/auth` is allowed once the house gate passes so a logged-out
+Yahoo user can start OAuth.
+
+### Yahoo OAuth (`adapters/yahoo/oauth.ts`)
+
+- Authorization-code flow. Tokens are encrypted at rest with AES-256-GCM using
+  `TOKEN_ENCRYPTION_KEY` and stored per-user on the `User` row.
+- The first user to sign in becomes `admin`/`active`; everyone else starts
+  `pending` until an admin approves them.
+- User identity (GUID + display name) is extracted from the `id_token`/userinfo
+  with several fallbacks (`yahooGuidFromTokens`).
+- `getValidYahooAccessToken` refreshes expiring tokens. A module-level
+  **single-flight map** (`inflightRefreshes`) coalesces concurrent refreshes for
+  the same user so heavy polling can't trigger a refresh stampede.
+- Decrypt failures (e.g. after a key rotation) are swallowed on login so Yahoo
+  can just mint fresh tokens.
+
+## Data model (Prisma)
+
+| Model | Purpose |
+|---|---|
+| `User` | Yahoo-authenticated member: encrypted tokens, role/status, per-user prefs (`draftSlot`, `teamName`, pins, avoids, weights, dark mode), `lastSeenAt` for presence. |
+| `LeagueDraft` | The single shared board (`id = "full-contact-2026"`): mode, team count, rounds, `picksJson`, `playersJson`, ranking `source`/`importedAt`. |
+| `DataImport` | Cached Boris Chen imports (payload + `fetchedAt` for staleness). |
+| `SyncCheckpoint` | Generic key/value+sequence store; used for mock-draft configs (`mock:<leagueKey>`) and resolved Yahoo draft snapshots. |
+| `LeagueConnection` | Per-league sync bookkeeping (last sync time / error). |
+| `OAuthCredential`, `DraftSession`, `PlayerMapping` | Legacy/earlier-iteration tables, retained by migrations. |
+
+There is exactly **one** `LeagueDraft` row — the board is league-wide shared
+state. Per-user differences (slot, pins, avoids, weights) live on `User` and are
+projected onto the shared board at read time.
+
+## HTTP surface (`app/api`)
+
+| Endpoint | Method | Role |
+|---|---|---|
+| `/api/auth/gate` `/login` `/logout` `/dev-login` | — | house-password gate + E2E login |
+| `/api/yahoo/auth` `/callback` `/status` `/leagues` | — | OAuth start/return, connection status, league list |
+| `/api/draft` | GET/PUT | read shared board (+ my prefs); reset/replace players/set league/apply picks |
+| `/api/draft/pick` | POST | append pick / undo / advance one / simulate to my turn |
+| `/api/me` | GET/PUT | current user's prefs |
+| `/api/admin/users` | GET/PATCH | admin: list + approve/assign slot/rename |
+| `/api/chen` | GET | fetch (or read cached) Boris Chen import |
+| `/api/yahoo/mock` | POST/GET/DELETE | start/confirm, inspect, stop a mock |
+| `/api/yahoo/sync` | GET | unified draft snapshot (mock or real Yahoo) |
+| `/api/weekly` | GET | in-season roster + optimal lineup + waivers + activity |
+
+`/api/draft` GET is the client's 3-second heartbeat and also opportunistically
+calls `ensureFreshBoardPlayers()` (throttled) — see "Rankings pipeline".
+
+## Domain logic (`src/domain`, pure)
+
+- **`snake.ts`** — snake-draft math: `selectionForOverall`, next-turn helpers.
+- **`draft.ts`** — draft state transitions: `makeManualPick`, `undoLastPick`,
+  `opponentPick`, `simulateToUserTurn`, `availablePlayers`.
+- **`recommendation.ts`** — factor-based scorer. Each candidate accrues weighted,
+  explainable signals: `chenRank`, `chenTier`, `tierCliff`, `positionalScarcity`,
+  `positionalNeed`, `flexValue`, `rosterBalance`, `turnUrgency`, `adpValue`,
+  `byeConcentration`, `teamConcentration`, `earlySpecialist`, `backupPenalty`.
+  Weights come from the user; `excludePlayerIds` drops avoided players.
+- **`lineup.ts`** — weekly start/sit optimizer: fills dedicated then flex slots by
+  value, emits concrete swap suggestions and injury/bye alerts.
+- **`identity.ts`** — name normalization + alias resolution so Yahoo player keys
+  and Chen names reconcile; surfaces ambiguous matches instead of guessing.
+- **`roster.ts` / `sync.ts` / `types.ts`** — roster-slot assignment, snapshot
+  reconciliation helpers, shared types.
+
+## Rankings pipeline (Boris Chen)
+
+1. `adapters/chen/server-cache.ts`
+   - `fetchChenPprImport()` pulls the PPR CSV (`CHEN_PPR_CSV_URL`), parses via
+     `boris-chen.ts`, and writes a `DataImport` row (payload + checksum).
+   - `getFreshChenImport(maxAgeMs = 6h)` serves the cached row if fresh, else
+     fetches live, else falls back to the stale cache.
+2. `persistence/league-draft.ts`
+   - On board creation, seeds `playersJson` from `getFreshChenImport()` (live if
+     the cache is empty), else synthetic `MOCK_PLAYERS`.
+   - `ensureFreshBoardPlayers()` (called from `/api/draft` GET, throttled to once
+     / 10 min per instance) refreshes the board's players **only while
+     `picks.length === 0`**, so rankings never shift mid-draft. Admins can force a
+     refresh via `/api/chen` ("Refresh now") or upload a CSV.
+
+## Draft synchronization
+
+Both mock and live drafts flow through one client loop and one snapshot endpoint.
+
+- **Client** (`components/draft-assistant.tsx`) polls `/api/yahoo/sync` on an
+  interval and `reconcileRemote()` applies any new picks onto the shared board via
+  `/api/draft` (`action: "picks"`) using optimistic concurrency
+  (`expectedUpdatedAt`); the loser of a race re-fetches. Every client also polls
+  `/api/draft` every 3s so all browsers converge on the same board.
+- **`/api/yahoo/sync`** returns a uniform snapshot:
+  - Real league → `fetchRealSnapshot()` calls the Yahoo API, then resolves player
+    keys → names via `getPlayersByKeys` (cached per process).
+  - Mock → `loadMockSnapshot()` from the mock engine.
+
+### Mock engine (`adapters/yahoo/mock-runner.ts`) — multi-seat
+
+Pure, deterministic BPA simulator with soft per-position caps.
+
+- Config carries `humanSlots: number[]` and `picksBySlot: Record<slot, id[]>`
+  (a legacy `userSlot`/`userPicks` shape is auto-normalized).
+- `projectedDraftOrder()` walks overall picks; robots fill non-human slots by
+  best-available, and the projector **stops at any human slot** with no confirmed
+  pick yet.
+- `elapsedPickCount()` converts wall-clock → picks due; `waitingSlot()` returns the
+  human slot currently on the clock (projector stopped **and** the clock reached it).
+- `recordUserPick(config, playerId, now, expectedSlot?)` appends to whichever seat
+  is on the clock (validating `expectedSlot` to block out-of-turn confirms) and
+  rewinds `startedAtIso` so the next robot pick is exactly one interval out.
+- **Auto-draft** (`autoPickMs`, default 30s for multi-human mocks): `autoPickDeadline()`
+  is the epoch ms a pending human seat lapses; `autoPickIfDue()` picks best-available
+  for that seat and re-uses `recordUserPick` with `now = deadline` so following robots
+  resume from the deadline, not from wall-clock (no burst of skipped picks).
+
+`mock-store.ts` persists configs in `SyncCheckpoint`; the store/route validate and
+expose `waitingSlot` + `autoPickAt` to the client. `advanceMockAutoPicks()` applies
+any overdue auto-picks under a compare-and-set on the checkpoint `sequence`, so
+concurrent pollers (multiple browsers/instances) can't double-record. It runs at the
+start of the sync + mock GET paths, so auto-picks flow to the shared board through the
+normal reconcile path (`appendSharedPick` is idempotent to absorb confirm races).
+Net effect: a practice mock pauses at **every** real manager's seat, so all managers
+rehearse simultaneously, each on their own screen, while robots fill unclaimed seats —
+and an absent manager is auto-drafted after 30s so the room never stalls.
+
+### Request flow: a mock pick (confirm → store → sync → board)
+
+Two stores cooperate: the **mock config** (`SyncCheckpoint`, source of truth for
+draft order) and the **shared board** (`LeagueDraft`, what every browser renders).
+The picker's own browser writes both; every other browser catches up by polling.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Picker as Picker's browser
+    participant MockAPI as /api/yahoo/mock
+    participant Store as mock-store + SyncCheckpoint
+    participant Board as /api/draft(+/pick) + LeagueDraft
+    participant SyncAPI as /api/yahoo/sync
+    actor Other as Other browser
+
+    Note over Picker: Manager is on the clock
+
+    rect rgb(232, 245, 233)
+    Note over Picker,Board: Happy path — human confirms
+    Picker->>MockAPI: POST {action:"confirm", playerId, slot}
+    MockAPI->>Store: appendMockUserPick()
+    Store->>Store: recordUserPick() → picksBySlot[slot] += id,<br/>rewind startedAtIso
+    Store-->>MockAPI: next config (waitingSlot, autoPickAt)
+    MockAPI-->>Picker: 200 { waitingSlot, picksProjected }
+    Picker->>Board: POST /api/draft/pick { playerId }
+    Board->>Board: appendSharedPick() (idempotent)
+    Board-->>Picker: shared board incl. new pick
+    end
+
+    rect rgb(255, 243, 224)
+    Note over Other,Board: Everyone else converges via polling
+    loop every syncIntervalSec
+        Other->>SyncAPI: GET /api/yahoo/sync?leagueKey=mock.…
+        SyncAPI->>Store: advanceMockAutoPicks() (CAS on sequence)
+        SyncAPI->>Store: loadMockSnapshot()
+        Store-->>SyncAPI: draftResults, waitingSlot, autoPickAt
+        SyncAPI-->>Other: snapshot (resolved picks only)
+        Other->>Other: reconcileRemote() resolves names → players
+        Other->>Board: POST /api/draft { picks, expectedUpdatedAt }
+        Board-->>Other: merged board (loser of race re-fetches)
+    end
+    loop every 3s
+        Other->>Board: GET /api/draft
+        Board-->>Other: shared board → all browsers match
+    end
+    end
+
+    rect rgb(255, 235, 238)
+    Note over Picker,Board: Fallback — nobody confirms within autoPickMs (30s)
+    Other->>SyncAPI: GET /api/yahoo/sync (a later poll)
+    SyncAPI->>Store: advanceMockAutoPicks(now ≥ autoPickAt)
+    Store->>Store: autoPickIfDue() → recordUserPick(BPA, now=deadline)<br/>under compare-and-set
+    Store-->>SyncAPI: config advanced past the absent seat
+    SyncAPI-->>Other: snapshot now includes the auto-pick
+    Other->>Board: POST /api/draft { picks } (applied like any pick)
+    end
+```
+
+Key invariants the diagram encodes:
+
+- The mock snapshot only ever publishes **resolved** picks and omits the seat on
+  the clock, so `reconcileRemote` can apply everything it receives, in order.
+- Auto-picks and human confirms both land in `picksBySlot`, so they replay
+  identically on every client — the board never diverges on who drafted whom.
+- `appendSharedPick` is idempotent and `/api/draft` writes are guarded by
+  `expectedUpdatedAt`, so the picker's own write and a peer's synced write can
+  race safely (one wins, the other is a no-op or re-fetch).
+
+## Weekly HQ
+
+`/api/weekly` fans out Yahoo calls (teams, league meta, roster, standings,
+scoreboard, transactions, free agents) in parallel, enriches with Chen data
+(auto-refreshed if stale), runs `optimizeLineup`, and returns lineup + alerts +
+waiver targets + activity. All Yahoo access is **read-only**, so every suggestion
+is advisory — the user makes actual moves in Yahoo. XML parsing lives in
+`adapters/yahoo/parsers.ts` (pure, unit-tested).
+
+## Client state model
+
+`DraftAssistant` holds transient UI state and mirrors the shared board:
+- `stateRef` / `membersRef` give effect callbacks (poll loops) access to the
+  latest state without re-subscribing.
+- `applyPayload()` maps the `/api/draft` response into local state and projects
+  the user's own slot/prefs.
+- Presence: `presenceLabel()` turns `lastSeenAt` into online/last-seen chips;
+  `touchLastSeen()` (server, throttled 30s) records activity on each board read.
+- Admin-only affordances (start draft launcher, member management, sync/rankings
+  controls) are gated on `me.role === "admin"`, with a "view as member" preview.
+
+## Testing
+
+- **Unit (Vitest)** — the pure domain plus adapters: snake math, recommendations,
+  lineup, identity, Chen CSV parsing, Yahoo XML parsers, OAuth URL/GUID, session
+  tokens, and the multi-seat mock engine.
+- **E2E (Playwright)** — `tests/e2e/simulation.spec.cjs` drives the two-stage login
+  and a simulated draft.
+
+## Environment variables
+
+| Var | Purpose |
+|---|---|
+| `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | Postgres (pooled + direct for migrations) |
+| `APP_ACCESS_PASSWORD` | house-password gate |
+| `TOKEN_ENCRYPTION_KEY` | AES-256-GCM key for Yahoo tokens at rest |
+| `YAHOO_CLIENT_ID` / `YAHOO_CLIENT_SECRET` / `YAHOO_REDIRECT_URI` | OAuth app |
+| `CHEN_PPR_CSV_URL` | override Boris Chen CSV source |
+| `E2E_LOGIN_SECRET` | bypass token for Playwright login |
+
+Rotating `TOKEN_ENCRYPTION_KEY` invalidates stored tokens; users simply re-auth
+(login tolerates the decrypt failure and stores fresh tokens).

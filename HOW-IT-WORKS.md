@@ -78,6 +78,12 @@ When the mock reaches your slot, your screen lights up "on the clock" and the
 whole room waits for you to confirm, exactly like draft night. Robots fill any
 slot nobody claimed.
 
+To keep the room moving when someone steps away, a manager who is on the clock
+for **30 seconds** without confirming gets auto-drafted the best available
+player, and the mock rolls on. You'll see the countdown ("auto-draft in 12s")
+right in the on-the-clock banner. This only applies to group practice mocks, not
+to draft night.
+
 ## Draft night, step by step
 
 1. Everyone opens the site and the Yahoo app.

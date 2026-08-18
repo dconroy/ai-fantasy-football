@@ -24,6 +24,12 @@ export interface MockDraftConfig {
   readonly userSlot?: number;
   /** @deprecated single-seat legacy field; superseded by picksBySlot. */
   readonly userPicks?: readonly string[];
+  /**
+   * When set (>0), a human seat that has been on the clock longer than this many
+   * milliseconds is auto-drafted the best available player. Used for multiplayer
+   * mocks so an absent manager never stalls the room.
+   */
+  readonly autoPickMs?: number;
 }
 
 interface NormalizedSeats {
@@ -263,4 +269,83 @@ export function recordUserPick(
     userPicks: undefined,
     startedAtIso,
   };
+}
+
+/**
+ * Epoch ms at which the human seat currently on the clock gets auto-drafted, or
+ * null when auto-draft is disabled or no human is pending. The clock starts the
+ * moment that seat's pick becomes due on the schedule, independent of `now`.
+ */
+export function autoPickDeadline(config: MockDraftConfig): number | null {
+  const autoMs = config.autoPickMs ?? 0;
+  if (autoMs <= 0) return null;
+  const { humanSlots } = normalizeSeats(config);
+  const order = projectedDraftOrder(config);
+  if (order.length >= config.teamCount * config.rounds) return null;
+  const slot = slotForOverall(order.length + 1, config.teamCount);
+  if (!humanSlots.has(slot)) return null;
+  const started = Date.parse(config.startedAtIso);
+  if (!Number.isFinite(started)) return null;
+  return started + order.length * config.intervalMs + autoMs;
+}
+
+/**
+ * Best-available player id for the human seat that is currently pending, using
+ * the same soft position caps and K/DEF gating the robots use. Null when no
+ * human is pending or the board is exhausted.
+ */
+export function autoPickPlayerId(config: MockDraftConfig): string | null {
+  const { humanSlots } = normalizeSeats(config);
+  const order = projectedDraftOrder(config);
+  if (order.length >= config.teamCount * config.rounds) return null;
+  const nextOverall = order.length + 1;
+  const slot = slotForOverall(nextOverall, config.teamCount);
+  if (!humanSlots.has(slot)) return null;
+  const round = Math.ceil(nextOverall / config.teamCount);
+
+  const sortable = [...config.players].sort((a, b) => {
+    const rank = (a.chenRank ?? 9999) - (b.chenRank ?? 9999);
+    if (rank !== 0) return rank;
+    return (a.adp ?? 9999) - (b.adp ?? 9999);
+  });
+  const drafted = new Set(order.map((player) => player.id));
+  const roster: Record<MockPlayerSeed["position"], number> = {
+    QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0,
+  };
+  order.forEach((player, index) => {
+    if (slotForOverall(index + 1, config.teamCount) === slot) {
+      roster[player.position] += 1;
+    }
+  });
+  const candidate = sortable.find((player) => {
+    if (drafted.has(player.id)) return false;
+    if (roster[player.position] >= MAX_PER_POSITION[player.position]) return false;
+    if ((player.position === "K" || player.position === "DEF") && round < 12) {
+      return false;
+    }
+    return true;
+  });
+  const choice = candidate ?? sortable.find((player) => !drafted.has(player.id));
+  return choice?.id ?? null;
+}
+
+/**
+ * If the on-clock human has blown the auto-pick deadline, return a new config
+ * with the best available player recorded for that seat and the clock anchored
+ * to the deadline (so following robots resume from there, not from `now`).
+ * Returns null when nothing is due.
+ */
+export function autoPickIfDue(
+  config: MockDraftConfig,
+  now: number = Date.now(),
+): MockDraftConfig | null {
+  const deadline = autoPickDeadline(config);
+  if (deadline === null || now < deadline) return null;
+  const playerId = autoPickPlayerId(config);
+  if (!playerId) return null;
+  const slot = slotForOverall(
+    projectedDraftOrder(config).length + 1,
+    config.teamCount,
+  );
+  return recordUserPick(config, playerId, deadline, slot);
 }

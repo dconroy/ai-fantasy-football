@@ -16,6 +16,40 @@ export async function readCachedChenImport(): Promise<ChenImport | null> {
   }
 }
 
+const DEFAULT_MAX_AGE_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/**
+ * Returns Chen rankings that are at most `maxAgeMs` old. Serves the DB cache
+ * when it is fresh, otherwise fetches live (which also refreshes the cache) and
+ * falls back to whatever is cached if the live fetch fails.
+ */
+export async function getFreshChenImport(
+  maxAgeMs: number = DEFAULT_MAX_AGE_MS,
+): Promise<ChenImport | null> {
+  let cachedRow: { payload: string; fetchedAt: Date } | null = null;
+  try {
+    cachedRow = await prisma.dataImport.findFirst({
+      where: { source: CACHE_SOURCE },
+      orderBy: { fetchedAt: "desc" },
+      select: { payload: true, fetchedAt: true },
+    });
+  } catch {
+    cachedRow = null;
+  }
+  if (cachedRow && Date.now() - cachedRow.fetchedAt.getTime() < maxAgeMs) {
+    try {
+      return JSON.parse(cachedRow.payload) as ChenImport;
+    } catch {
+      // fall through to a live fetch
+    }
+  }
+  try {
+    return await fetchChenPprImport();
+  } catch {
+    return cachedRow ? (JSON.parse(cachedRow.payload) as ChenImport) : null;
+  }
+}
+
 export async function fetchChenPprImport(): Promise<ChenImport> {
   const url =
     process.env.CHEN_PPR_CSV_URL ??

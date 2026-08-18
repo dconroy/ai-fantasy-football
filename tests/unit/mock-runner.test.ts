@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  autoPickDeadline,
+  autoPickIfDue,
+  autoPickPlayerId,
   isWaitingOnUser,
   mockDraftResults,
   projectedDraftOrder,
@@ -118,5 +121,41 @@ describe("mock-runner", () => {
     const base = config({ humanSlots: [5], picksBySlot: {} });
     // p1 is the robots' first overall pick; slot 5 cannot re-draft it.
     expect(() => recordUserPick(base, "p1", 10_000)).toThrow(/already drafted/);
+  });
+
+  it("auto-drafts a human seat that blows the deadline", () => {
+    const base = config({
+      humanSlots: [1, 3],
+      picksBySlot: {},
+      autoPickMs: 30_000,
+    });
+    // Slot 1 is on the clock from t=0, so the deadline is exactly 30s later.
+    expect(autoPickDeadline(base)).toBe(30_000);
+    expect(autoPickPlayerId(base)).toBe("p1");
+    expect(autoPickIfDue(base, 29_999)).toBeNull();
+
+    const auto = autoPickIfDue(base, 30_000);
+    expect(auto).not.toBeNull();
+    expect(auto!.picksBySlot?.[1]).toEqual(["p1"]);
+    // A robot fills slot 2, then the draft blocks on the next human (slot 3).
+    expect(projectedDraftOrder(auto!)).toHaveLength(2);
+    expect(waitingSlot(auto!, 30_000 + base.intervalMs)).toBe(3);
+  });
+
+  it("does not auto-draft when the feature is disabled", () => {
+    const base = config({ humanSlots: [1], picksBySlot: {} });
+    expect(autoPickDeadline(base)).toBeNull();
+    expect(autoPickIfDue(base, 10_000_000)).toBeNull();
+  });
+
+  it("keeps a confirmed pick over a would-be auto-pick", () => {
+    const base = config({
+      humanSlots: [1, 3],
+      picksBySlot: {},
+      autoPickMs: 30_000,
+    });
+    // Human confirms before the deadline; nothing is auto-due afterward at t.
+    const confirmed = recordUserPick(base, "p1", 5_000, 1);
+    expect(confirmed.picksBySlot?.[1]).toEqual(["p1"]);
   });
 });

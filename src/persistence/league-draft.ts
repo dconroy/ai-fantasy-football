@@ -9,7 +9,11 @@ import {
   type StrategyWeights,
 } from "@/domain";
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
-import { readCachedChenImport } from "@/adapters/chen/server-cache";
+import type { ChenImport } from "@/adapters/chen/boris-chen";
+import {
+  getFreshChenImport,
+  readCachedChenImport,
+} from "@/adapters/chen/server-cache";
 import type { User } from "@prisma/client";
 import type { Position } from "@/domain";
 
@@ -46,24 +50,30 @@ function parseJson<T>(value: string, fallback: T): T {
   }
 }
 
-function playersFromChenCache() {
-  return readCachedChenImport().then((cached) => {
-    if (!cached?.players.length) return null;
-    return {
-      players: cached.players.map((player) => ({
-        id: player.sourceId,
-        name: player.name,
-        position: player.position as Position,
-        team: player.team ?? "FA",
-        chenRank: player.overallRank,
-        chenTier: player.tier,
-        byeWeek: player.byeWeek,
-        adp: player.adp,
-      })),
-      importedAt: cached.importedAt,
-      source: cached.source,
-    };
-  });
+function shapeChenImport(cached: ChenImport | null) {
+  if (!cached?.players.length) return null;
+  return {
+    players: cached.players.map((player) => ({
+      id: player.sourceId,
+      name: player.name,
+      position: player.position as Position,
+      team: player.team ?? "FA",
+      chenRank: player.overallRank,
+      chenTier: player.tier,
+      byeWeek: player.byeWeek,
+      adp: player.adp,
+    })),
+    importedAt: cached.importedAt,
+    source: cached.source,
+  };
+}
+
+async function freshPlayersFromChen() {
+  return shapeChenImport(await getFreshChenImport());
+}
+
+async function playersFromChenCache() {
+  return shapeChenImport(await readCachedChenImport());
 }
 
 export async function getOrCreateLeagueDraft(): Promise<SharedDraft> {
@@ -78,7 +88,7 @@ export async function getOrCreateLeagueDraft(): Promise<SharedDraft> {
     return toShared(existing);
   }
 
-  const chen = stillSynthetic ? await playersFromChenCache() : null;
+  const chen = stillSynthetic ? await freshPlayersFromChen() : null;
   const seed = chen ?? {
     players: [...MOCK_PLAYERS],
     importedAt: "Synthetic fixture",
@@ -100,6 +110,41 @@ export async function getOrCreateLeagueDraft(): Promise<SharedDraft> {
     },
   });
   return toShared(created);
+}
+
+let lastFreshnessCheck = 0;
+const FRESHNESS_CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes per instance
+
+/**
+ * Keeps the shared board on current Boris Chen rankings without anyone pressing
+ * a button. Only refreshes while the draft has not started (no picks) so live
+ * rankings never shift mid-draft. Throttled so board polling stays cheap.
+ */
+export async function ensureFreshBoardPlayers(): Promise<void> {
+  if (Date.now() - lastFreshnessCheck < FRESHNESS_CHECK_INTERVAL_MS) return;
+  lastFreshnessCheck = Date.now();
+  try {
+    const current = await getOrCreateLeagueDraft();
+    if (current.picks.length > 0) return;
+    const isSynthetic = current.source === "Built-in mock data";
+    const fresh = isSynthetic
+      ? await freshPlayersFromChen()
+      : shapeChenImport(await getFreshChenImport());
+    if (!fresh) return;
+    const changed =
+      fresh.importedAt !== current.importedAt ||
+      fresh.source !== current.source ||
+      fresh.players.length !== current.players.length;
+    if (!changed) return;
+    await saveSharedDraft({
+      players: fresh.players,
+      source: fresh.source,
+      importedAt: fresh.importedAt,
+      picks: [],
+    });
+  } catch {
+    // Never let a rankings refresh break loading the board.
+  }
 }
 
 function toShared(row: {
@@ -200,6 +245,12 @@ export async function appendSharedPick(
   const current = await getOrCreateLeagueDraft();
   const player = current.players.find((item) => item.id === playerId);
   if (!player) throw new Error(`Unknown player ${playerId}`);
+  // Idempotent: if this player is already on the board (e.g. another client
+  // synced the pick a beat before this confirm landed), treat it as a no-op so
+  // the confirming user never sees a spurious "already drafted" error.
+  if (current.picks.some((pick) => pick.player.id === playerId)) {
+    return current;
+  }
   const next = makeManualPick(draftStateFor(current, 1), player, {
     madeAt: options.madeAt ?? new Date().toISOString(),
   });

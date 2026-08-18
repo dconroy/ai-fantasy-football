@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/persistence/prisma";
 import {
+  advanceMockAutoPicks,
   appendMockUserPick,
   checkpointId,
   loadMockConfig,
@@ -9,10 +10,13 @@ import {
 import type { MockPlayerSeed } from "@/adapters/yahoo/mock-runner";
 import type { MockDraftConfig } from "@/adapters/yahoo/mock-runner";
 import {
+  autoPickDeadline,
   elapsedPickCount,
   projectedDraftOrder,
   waitingSlot,
 } from "@/adapters/yahoo/mock-runner";
+
+const DEFAULT_AUTO_PICK_MS = 30000;
 
 export const runtime = "nodejs";
 
@@ -30,6 +34,7 @@ export async function POST(request: Request) {
         teamCount?: number;
         rounds?: number;
         intervalMs?: number;
+        autoPickMs?: number;
         players?: Array<Partial<MockPlayerSeed> & { position?: string }>;
       }
     | null;
@@ -79,6 +84,15 @@ export async function POST(request: Request) {
     ),
   ].sort((a, b) => a - b);
 
+  // Auto-draft only matters when more than one person is on the hook: a
+  // solo/manual mock is driven entirely by one operator, so leave it off there.
+  const autoPickMs =
+    body.autoPickMs !== undefined
+      ? Math.max(0, body.autoPickMs)
+      : humanSlots.length >= 2
+        ? DEFAULT_AUTO_PICK_MS
+        : 0;
+
   const players: MockPlayerSeed[] = (body.players ?? [])
     .filter((player) => player?.id && player.name && player.position)
     .filter((player) => ALLOWED_POSITIONS.has(String(player.position)))
@@ -109,6 +123,7 @@ export async function POST(request: Request) {
     startedAtIso: new Date().toISOString(),
     players,
     picksBySlot: {},
+    autoPickMs,
   };
 
   await saveMockConfig(config);
@@ -118,6 +133,7 @@ export async function POST(request: Request) {
     startedAt: config.startedAtIso,
     intervalMs,
     humanSlots,
+    autoPickMs,
     totalPicks: teamCount * rounds,
   });
 }
@@ -127,6 +143,7 @@ export async function GET(request: Request) {
   if (!leagueKey) {
     return NextResponse.json({ error: "leagueKey required" }, { status: 400 });
   }
+  await advanceMockAutoPicks(leagueKey);
   const config = await loadMockConfig(leagueKey);
   if (!config) {
     return NextResponse.json({ running: false });
@@ -135,6 +152,7 @@ export async function GET(request: Request) {
   const projected = projectedDraftOrder(config);
   const readyCount = Math.min(projected.length, elapsedPickCount(config, now));
   const blockedOn = waitingSlot(config, now);
+  const deadline = autoPickDeadline(config);
   return NextResponse.json({
     running: true,
     leagueKey,
@@ -147,6 +165,8 @@ export async function GET(request: Request) {
     totalPicks: config.teamCount * config.rounds,
     waitingOnUser: blockedOn !== null,
     waitingSlot: blockedOn,
+    autoPickMs: config.autoPickMs ?? 0,
+    autoPickAt: deadline === null ? null : new Date(deadline).toISOString(),
     picksBySlot: config.picksBySlot ?? {},
     nextPickAt:
       blockedOn !== null

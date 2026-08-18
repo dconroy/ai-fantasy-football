@@ -1,7 +1,8 @@
 # 2026 Fantasy Football Draft Room
 
 Not a developer? Read [HOW-IT-WORKS.md](HOW-IT-WORKS.md) instead — it explains
-the whole app in plain English.
+the whole app in plain English. Building on it? See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the technical design.
 
 A local, desktop-first 12-team full-PPR snake draft assistant. The first version
 focuses on a reliable simulation and a transparent, framework-independent
