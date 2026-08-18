@@ -15,8 +15,13 @@ export async function GET(request: NextRequest) {
   const expectedState = request.cookies.get("yahoo_oauth_state")?.value;
   const appUrl = process.env.APP_URL ?? url.origin;
 
-  if (url.searchParams.get("error")) {
-    return NextResponse.redirect(`${appUrl}/login?yahoo=denied`);
+  const oauthError = url.searchParams.get("error");
+  if (oauthError) {
+    const detail = url.searchParams.get("error_description") ?? oauthError;
+    const denied = oauthError === "access_denied";
+    return NextResponse.redirect(
+      `${appUrl}/login?yahoo=${denied ? "denied" : "error"}&message=${encodeURIComponent(detail)}`,
+    );
   }
   if (!code || !state || !expectedState || state !== expectedState) {
     return NextResponse.json({ error: "Invalid Yahoo OAuth callback state" }, { status: 400 });

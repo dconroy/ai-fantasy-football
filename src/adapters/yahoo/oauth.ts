@@ -71,14 +71,9 @@ export function createYahooAuthorizationUrl(state: string) {
   url.searchParams.set("state", state);
   url.searchParams.set("language", "en-us");
   const requested = process.env.YAHOO_OAUTH_SCOPE?.trim();
-  const scopes = new Set(
-    (requested ? requested.split(/\s+/) : ["openid", "profile"]).filter(Boolean),
-  );
-  if (!requested) {
-    scopes.add("openid");
-    scopes.add("profile");
-  }
-  if (scopes.size > 0) url.searchParams.set("scope", [...scopes].join(" "));
+  // openid only — Fantasy scopes are not granted yet and "profile" can 400 the consent screen.
+  const scope = requested || "openid";
+  if (scope) url.searchParams.set("scope", scope);
   return url;
 }
 

@@ -30,7 +30,13 @@ export default function LoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("yahoo") === "denied") setYahooError("Yahoo authorization was cancelled.");
+    if (params.get("yahoo") === "denied") {
+      setYahooError(
+        params.get("message")
+          ? `Yahoo denied access: ${params.get("message")}`
+          : "Yahoo authorization was cancelled. Approve the Yahoo prompt — do not hit Cancel.",
+      );
+    }
     if (params.get("yahoo") === "error") {
       setYahooError(params.get("message") ?? "Yahoo authorization failed.");
     }
