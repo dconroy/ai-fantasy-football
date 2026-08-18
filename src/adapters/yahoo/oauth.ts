@@ -13,7 +13,9 @@ interface YahooTokenResponse {
   expires_in: number;
   token_type?: string;
   scope?: string;
+  id_token?: string;
   xoauth_yahoo_guid?: string;
+  guid?: string;
 }
 
 export interface YahooLoginResult {
@@ -68,8 +70,15 @@ export function createYahooAuthorizationUrl(state: string) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
   url.searchParams.set("language", "en-us");
-  const scope = process.env.YAHOO_OAUTH_SCOPE?.trim();
-  if (scope) url.searchParams.set("scope", scope);
+  const requested = process.env.YAHOO_OAUTH_SCOPE?.trim();
+  const scopes = new Set(
+    (requested ? requested.split(/\s+/) : ["openid", "profile"]).filter(Boolean),
+  );
+  if (!requested) {
+    scopes.add("openid");
+    scopes.add("profile");
+  }
+  if (scopes.size > 0) url.searchParams.set("scope", [...scopes].join(" "));
   return url;
 }
 
@@ -93,36 +102,71 @@ async function requestTokens(parameters: URLSearchParams): Promise<YahooTokenRes
   return body;
 }
 
-export function yahooGuidFromTokens(tokens: YahooTokenResponse): string | null {
-  if (tokens.xoauth_yahoo_guid) return tokens.xoauth_yahoo_guid;
-  const parts = tokens.access_token.split(".");
+function jwtClaims(token?: string) {
+  const parts = token?.split(".") ?? [];
   if (parts.length !== 3) return null;
   try {
-    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as {
+    return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as {
       sub?: string;
       guid?: string;
       xoauth_yahoo_guid?: string;
+      name?: string;
+      nickname?: string;
+      email?: string;
     };
-    return payload.xoauth_yahoo_guid ?? payload.guid ?? payload.sub ?? null;
   } catch {
     return null;
   }
 }
 
-function displayNameFromTokens(tokens: YahooTokenResponse, guid: string) {
-  const parts = tokens.access_token.split(".");
-  if (parts.length === 3) {
-    try {
-      const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as {
-        name?: string;
-        nickname?: string;
-      };
-      if (payload.name?.trim()) return payload.name.trim();
-      if (payload.nickname?.trim()) return payload.nickname.trim();
-    } catch {
-      // Fall through to GUID label.
-    }
+export function yahooGuidFromTokens(tokens: YahooTokenResponse): string | null {
+  const fromId = jwtClaims(tokens.id_token);
+  const fromAccess = jwtClaims(tokens.access_token);
+  return (
+    tokens.xoauth_yahoo_guid ??
+    tokens.guid ??
+    fromId?.xoauth_yahoo_guid ??
+    fromId?.guid ??
+    fromId?.sub ??
+    fromAccess?.xoauth_yahoo_guid ??
+    fromAccess?.guid ??
+    fromAccess?.sub ??
+    null
+  );
+}
+
+async function yahooIdentityFromUserinfo(accessToken: string): Promise<{
+  guid?: string;
+  name?: string;
+} | null> {
+  try {
+    const response = await fetch("https://api.login.yahoo.com/openid/v1/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      sub?: string;
+      guid?: string;
+      name?: string;
+      nickname?: string;
+      email?: string;
+    };
+    return {
+      guid: body.sub ?? body.guid,
+      name: body.name ?? body.nickname ?? body.email,
+    };
+  } catch {
+    return null;
   }
+}
+
+function displayNameFromTokens(tokens: YahooTokenResponse, guid: string, fallbackName?: string) {
+  if (fallbackName?.trim()) return fallbackName.trim();
+  const claims = jwtClaims(tokens.id_token) ?? jwtClaims(tokens.access_token);
+  if (claims?.name?.trim()) return claims.name.trim();
+  if (claims?.nickname?.trim()) return claims.nickname.trim();
+  if (claims?.email?.trim()) return claims.email.trim();
   return `Yahoo ${guid.slice(-6)}`;
 }
 
@@ -149,7 +193,8 @@ export async function exchangeYahooCode(code: string): Promise<YahooLoginResult>
   const tokens = await requestTokens(
     new URLSearchParams({ grant_type: "authorization_code", code }),
   );
-  const guid = yahooGuidFromTokens(tokens);
+  const profile = await yahooIdentityFromUserinfo(tokens.access_token);
+  const guid = yahooGuidFromTokens(tokens) ?? profile?.guid ?? null;
   if (!guid) throw new Error("Yahoo did not return a user id");
   if (!tokens.refresh_token) throw new Error("Yahoo did not return a refresh token");
 
@@ -166,7 +211,7 @@ export async function exchangeYahooCode(code: string): Promise<YahooLoginResult>
     : await prisma.user.create({
         data: {
           yahooGuid: guid,
-          displayName: displayNameFromTokens(tokens, guid),
+          displayName: displayNameFromTokens(tokens, guid, profile?.name),
           role: isFirst ? "admin" : "member",
           status: isFirst ? "active" : "pending",
           encryptedAccessToken: encrypt(tokens.access_token),

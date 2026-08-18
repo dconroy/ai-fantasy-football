@@ -12,6 +12,17 @@ describe("yahooGuidFromTokens", () => {
     ).toBe("GUID123");
   });
 
+  it("reads id_token sub when the access token is opaque", () => {
+    const payload = Buffer.from(JSON.stringify({ sub: "openid-sub" })).toString("base64url");
+    expect(
+      yahooGuidFromTokens({
+        access_token: "opaque-token",
+        id_token: `hdr.${payload}.sig`,
+        expires_in: 3600,
+      }),
+    ).toBe("openid-sub");
+  });
+
   it("reads JWT sub when guid is absent", () => {
     const payload = Buffer.from(JSON.stringify({ sub: "jwt-sub" })).toString("base64url");
     expect(

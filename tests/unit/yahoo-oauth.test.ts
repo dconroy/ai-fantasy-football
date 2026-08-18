@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe("Yahoo OAuth", () => {
-  it("builds an authorization-code URL with state and no ungranted scope", () => {
+  it("builds an authorization-code URL with OpenID scope for user identity", () => {
     process.env.YAHOO_CLIENT_ID = "test-client";
     process.env.YAHOO_REDIRECT_URI = "https://draft.example.com/api/yahoo/callback";
     delete process.env.YAHOO_OAUTH_SCOPE;
@@ -29,7 +29,7 @@ describe("Yahoo OAuth", () => {
       "https://draft.example.com/api/yahoo/callback",
     );
     expect(url.searchParams.get("response_type")).toBe("code");
-    expect(url.searchParams.get("scope")).toBeNull();
+    expect(url.searchParams.get("scope")).toBe("openid profile");
     expect(url.searchParams.get("state")).toBe("unpredictable-state");
   });
 });
