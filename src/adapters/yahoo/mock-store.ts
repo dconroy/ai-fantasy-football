@@ -1,7 +1,14 @@
 import { prisma } from "@/persistence/prisma";
 import type { MockDraftConfig } from "./mock-runner";
-import { mockDraftResults, recordUserPick } from "./mock-runner";
+import { humanPickCount, mockDraftResults, recordUserPick } from "./mock-runner";
 import type { YahooSyncSnapshot } from "./yahoo-api";
+
+function humanSlotSet(config: MockDraftConfig): Set<number> {
+  if (config.humanSlots && config.humanSlots.length > 0) {
+    return new Set(config.humanSlots);
+  }
+  return new Set([config.userSlot ?? 1]);
+}
 
 export function checkpointId(leagueKey: string): string {
   return `mock:${leagueKey}`;
@@ -22,16 +29,17 @@ export async function loadMockConfig(
 }
 
 export async function saveMockConfig(config: MockDraftConfig): Promise<void> {
+  const sequence = humanPickCount(config);
   await prisma.syncCheckpoint.upsert({
     where: { id: checkpointId(config.leagueKey) },
     create: {
       id: checkpointId(config.leagueKey),
-      sequence: (config.userPicks ?? []).length,
+      sequence,
       syncedAt: new Date(),
       payload: JSON.stringify(config),
     },
     update: {
-      sequence: (config.userPicks ?? []).length,
+      sequence,
       syncedAt: new Date(),
       payload: JSON.stringify(config),
     },
@@ -41,10 +49,11 @@ export async function saveMockConfig(config: MockDraftConfig): Promise<void> {
 export async function appendMockUserPick(
   leagueKey: string,
   playerId: string,
+  expectedSlot?: number,
 ): Promise<MockDraftConfig> {
   const config = await loadMockConfig(leagueKey);
   if (!config) throw new Error(`No mock draft running for ${leagueKey}`);
-  const next = recordUserPick(config, playerId);
+  const next = recordUserPick(config, playerId, Date.now(), expectedSlot);
   await saveMockConfig(next);
   return next;
 }
@@ -54,7 +63,9 @@ export async function loadMockSnapshot(
 ): Promise<YahooSyncSnapshot | null> {
   const config = await loadMockConfig(leagueKey);
   if (!config) return null;
-  const { picks, order, total, waitingOnUser } = mockDraftResults(config);
+  const { picks, order, total, waitingOnUser, waitingSlot } =
+    mockDraftResults(config);
+  const humanSlots = humanSlotSet(config);
   return {
     league: {
       leagueKey,
@@ -72,11 +83,17 @@ export async function loadMockSnapshot(
     },
     teams: Array.from({ length: config.teamCount }, (_, index) => ({
       teamKey: `mock.t.${index + 1}`,
-      name: index + 1 === config.userSlot ? "Cobra Kai" : `Team ${index + 1}`,
+      name: humanSlots.has(index + 1)
+        ? `Manager (slot ${index + 1})`
+        : `Team ${index + 1}`,
       draftSlot: index + 1,
     })),
     draftResults: picks,
-    ...({ mockOrder: order } as unknown as Record<string, unknown>),
+    ...({
+      mockOrder: order,
+      waitingSlot,
+      humanSlots: [...humanSlots],
+    } as unknown as Record<string, unknown>),
     syncedAt: new Date().toISOString(),
   };
 }

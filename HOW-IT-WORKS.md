@@ -10,8 +10,9 @@ touches your Yahoo team.
 
 1. Open the site. It asks for the **magic word**. You know the movie. Type it.
 2. Click **Sign in with Yahoo** and log in with your normal Yahoo account.
-3. First time only: you'll land on a "waiting for approval" page. Dan (the
-   admin) taps approve, and you're in. After that you go straight to the board.
+3. First time only: you'll land on a "waiting for approval" page. The admin
+   (the Cobra Kai guy) taps approve, and you're in. After that you go straight
+   to the board.
 
 ## First thing to do when you're in
 
@@ -57,21 +58,30 @@ hours ago. That's how you know who's around.
 
 ## Starting a draft (admin only)
 
-Dan presses **"Start a draft…"** and picks one of three options:
+The admin presses **"Start a draft…"** and picks one of three options:
 
 | Option | What happens | When to use it |
 |---|---|---|
-| **Practice mock** | 11 robots draft against you on a timer. Pauses when it's your turn. | Practicing before draft night |
-| **Manual mock** | Nothing moves until you press buttons. | Slowly exploring strategy |
+| **Practice mock** | Robots draft the empty seats on a timer and **pause at every real manager's slot** until that person confirms. | A full group dress rehearsal before draft night |
+| **Manual mock** | Nothing moves until you press buttons. | Slowly exploring strategy solo |
 | **Draft night — live** | The board follows our **real Yahoo draft** automatically. | The actual draft |
 
 If you're not the admin you don't start anything — just show up, set your
 slot, and enjoy the recommendations.
 
+### Group practice mocks
+
+The practice mock is a real rehearsal for everyone at once. Before starting it,
+make sure each manager has **set their own draft slot** (the dropdown, or the
+admin can set it in League admin) — and that everyone has a **different** slot.
+When the mock reaches your slot, your screen lights up "on the clock" and the
+whole room waits for you to confirm, exactly like draft night. Robots fill any
+slot nobody claimed.
+
 ## Draft night, step by step
 
 1. Everyone opens the site and the Yahoo app.
-2. Dan hits **Start a draft… → Draft night — live**.
+2. The admin hits **Start a draft… → Draft night — live**.
 3. Draft normally **in the Yahoo app**. The board sees every pick within
    seconds and keeps your Top five fresh.
 4. When you're on the clock in Yahoo, look at the Top five here, then make the

@@ -10,8 +10,8 @@ import type { MockPlayerSeed } from "@/adapters/yahoo/mock-runner";
 import type { MockDraftConfig } from "@/adapters/yahoo/mock-runner";
 import {
   elapsedPickCount,
-  isWaitingOnUser,
   projectedDraftOrder,
+  waitingSlot,
 } from "@/adapters/yahoo/mock-runner";
 
 export const runtime = "nodejs";
@@ -24,7 +24,9 @@ export async function POST(request: Request) {
         action?: "start" | "confirm";
         leagueKey?: string;
         playerId?: string;
+        slot?: number;
         userSlot?: number;
+        humanSlots?: number[];
         teamCount?: number;
         rounds?: number;
         intervalMs?: number;
@@ -45,12 +47,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "playerId required" }, { status: 400 });
     }
     try {
-      const config = await appendMockUserPick(leagueKey, body.playerId);
+      const config = await appendMockUserPick(
+        leagueKey,
+        body.playerId,
+        body.slot,
+      );
       return NextResponse.json({
         leagueKey,
-        userPicks: config.userPicks ?? [],
+        picksBySlot: config.picksBySlot ?? {},
         startedAt: config.startedAtIso,
-        waitingOnUser: isWaitingOnUser(config),
+        waitingSlot: waitingSlot(config),
         picksProjected: projectedDraftOrder(config).length,
       });
     } catch (error) {
@@ -63,8 +69,15 @@ export async function POST(request: Request) {
 
   const teamCount = body.teamCount ?? 12;
   const rounds = body.rounds ?? 15;
-  const userSlot = body.userSlot ?? 1;
   const intervalMs = Math.max(1000, body.intervalMs ?? 8000);
+  const humanSlots = [
+    ...new Set(
+      (body.humanSlots && body.humanSlots.length > 0
+        ? body.humanSlots
+        : [body.userSlot ?? 1]
+      ).filter((slot) => Number.isInteger(slot) && slot >= 1 && slot <= teamCount),
+    ),
+  ].sort((a, b) => a - b);
 
   const players: MockPlayerSeed[] = (body.players ?? [])
     .filter((player) => player?.id && player.name && player.position)
@@ -91,11 +104,11 @@ export async function POST(request: Request) {
     leagueKey,
     teamCount,
     rounds,
-    userSlot,
+    humanSlots,
     intervalMs,
     startedAtIso: new Date().toISOString(),
     players,
-    userPicks: [],
+    picksBySlot: {},
   };
 
   await saveMockConfig(config);
@@ -104,6 +117,7 @@ export async function POST(request: Request) {
     leagueKey,
     startedAt: config.startedAtIso,
     intervalMs,
+    humanSlots,
     totalPicks: teamCount * rounds,
   });
 }
@@ -120,7 +134,7 @@ export async function GET(request: Request) {
   const now = Date.now();
   const projected = projectedDraftOrder(config);
   const readyCount = Math.min(projected.length, elapsedPickCount(config, now));
-  const waitingOnUser = isWaitingOnUser(config);
+  const blockedOn = waitingSlot(config, now);
   return NextResponse.json({
     running: true,
     leagueKey,
@@ -128,16 +142,19 @@ export async function GET(request: Request) {
     intervalMs: config.intervalMs,
     teamCount: config.teamCount,
     rounds: config.rounds,
-    userSlot: config.userSlot,
+    humanSlots: config.humanSlots ?? (config.userSlot ? [config.userSlot] : []),
     picksMade: readyCount,
     totalPicks: config.teamCount * config.rounds,
-    waitingOnUser,
-    userPicks: config.userPicks ?? [],
-    nextPickAt: waitingOnUser
-      ? null
-      : new Date(
-          Date.parse(config.startedAtIso) + (readyCount + 1) * config.intervalMs,
-        ).toISOString(),
+    waitingOnUser: blockedOn !== null,
+    waitingSlot: blockedOn,
+    picksBySlot: config.picksBySlot ?? {},
+    nextPickAt:
+      blockedOn !== null
+        ? null
+        : new Date(
+            Date.parse(config.startedAtIso) +
+              (readyCount + 1) * config.intervalMs,
+          ).toISOString(),
   });
 }
 

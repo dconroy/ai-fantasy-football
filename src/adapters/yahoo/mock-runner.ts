@@ -13,12 +13,50 @@ export interface MockDraftConfig {
   readonly leagueKey: string;
   readonly teamCount: number;
   readonly rounds: number;
-  readonly userSlot: number;
   readonly intervalMs: number;
   readonly startedAtIso: string;
   readonly players: readonly MockPlayerSeed[];
-  /** Player ids the user has confirmed, in draft order. */
+  /** Draft slots that pause for a human to confirm. Robots fill the rest. */
+  readonly humanSlots?: readonly number[];
+  /** Confirmed player ids per human slot, in the order that slot picked them. */
+  readonly picksBySlot?: Readonly<Record<number, readonly string[]>>;
+  /** @deprecated single-seat legacy field; superseded by humanSlots. */
+  readonly userSlot?: number;
+  /** @deprecated single-seat legacy field; superseded by picksBySlot. */
   readonly userPicks?: readonly string[];
+}
+
+interface NormalizedSeats {
+  readonly humanSlots: Set<number>;
+  readonly picksBySlot: Record<number, readonly string[]>;
+}
+
+/**
+ * Accepts either the multi-seat shape (`humanSlots` + `picksBySlot`) or the
+ * legacy single-seat shape (`userSlot` + `userPicks`) and returns a uniform
+ * view the rest of the module works against.
+ */
+function normalizeSeats(config: MockDraftConfig): NormalizedSeats {
+  if (config.humanSlots && config.humanSlots.length > 0) {
+    const picksBySlot: Record<number, readonly string[]> = {};
+    for (const slot of config.humanSlots) {
+      picksBySlot[slot] = config.picksBySlot?.[slot] ?? [];
+    }
+    return { humanSlots: new Set(config.humanSlots), picksBySlot };
+  }
+  const slot = config.userSlot ?? 1;
+  return {
+    humanSlots: new Set([slot]),
+    picksBySlot: { [slot]: config.userPicks ?? [] },
+  };
+}
+
+/** Total picks confirmed by all human seats combined. */
+export function humanPickCount(config: MockDraftConfig): number {
+  const { humanSlots, picksBySlot } = normalizeSeats(config);
+  let total = 0;
+  for (const slot of humanSlots) total += (picksBySlot[slot] ?? []).length;
+  return total;
 }
 
 const MAX_PER_POSITION: Record<MockPlayerSeed["position"], number> = {
@@ -39,10 +77,11 @@ export function slotForOverall(overall: number, teamCount: number): number {
 
 /**
  * Deterministic BPA drafter with soft per-position caps.
- * Stops (does not invent a pick) when it reaches the user slot and no
- * corresponding entry exists in `userPicks` yet.
+ * Stops (does not invent a pick) when it reaches a human slot that has not yet
+ * confirmed its next pick. Robots fill every non-human slot.
  */
 export function projectedDraftOrder(config: MockDraftConfig): MockPlayerSeed[] {
+  const { humanSlots, picksBySlot } = normalizeSeats(config);
   const byId = new Map(config.players.map((player) => [player.id, player]));
   const sortable = [...config.players].sort((a, b) => {
     const rank = (a.chenRank ?? 9999) - (b.chenRank ?? 9999);
@@ -58,21 +97,25 @@ export function projectedDraftOrder(config: MockDraftConfig): MockPlayerSeed[] {
     () => ({ QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 }),
   );
   const remaining = new Set(sortable.map((player) => player.id));
-  for (const id of config.userPicks ?? []) remaining.delete(id);
+  for (const slot of humanSlots) {
+    for (const id of picksBySlot[slot] ?? []) remaining.delete(id);
+  }
 
   const picks: MockPlayerSeed[] = [];
-  let userPickIndex = 0;
+  const consumed: Record<number, number> = {};
 
   for (let overall = 1; overall <= totalPicks; overall += 1) {
     const slot = slotForOverall(overall, config.teamCount);
     const round = Math.ceil(overall / config.teamCount);
 
-    if (slot === config.userSlot) {
-      const userId = config.userPicks?.[userPickIndex];
+    if (humanSlots.has(slot)) {
+      const slotPicks = picksBySlot[slot] ?? [];
+      const index = consumed[slot] ?? 0;
+      const userId = slotPicks[index];
       if (!userId) break;
       const player = byId.get(userId);
       if (!player) break;
-      userPickIndex += 1;
+      consumed[slot] = index + 1;
       remaining.delete(player.id);
       rosters[slot - 1][player.position] += 1;
       picks.push(player);
@@ -109,20 +152,31 @@ export function elapsedPickCount(
 }
 
 /**
- * True when the projector has stopped on a missing user pick and the clock has
- * already caught up to that pause (so the draft is blocked on the user now).
+ * The human slot the draft is currently blocked on, or null when a robot pick
+ * is due (or the draft is complete). "Blocked" means the projector stopped at a
+ * human seat AND the clock has already reached that pick.
+ */
+export function waitingSlot(
+  config: MockDraftConfig,
+  now: number = Date.now(),
+): number | null {
+  const { humanSlots } = normalizeSeats(config);
+  const order = projectedDraftOrder(config);
+  if (order.length >= config.teamCount * config.rounds) return null;
+  const nextOverall = order.length + 1;
+  const slot = slotForOverall(nextOverall, config.teamCount);
+  if (!humanSlots.has(slot)) return null;
+  return elapsedPickCount(config, now) >= order.length ? slot : null;
+}
+
+/**
+ * True when the draft is blocked on any human seat right now.
  */
 export function isWaitingOnUser(
   config: MockDraftConfig,
   now: number = Date.now(),
 ): boolean {
-  const order = projectedDraftOrder(config);
-  if (order.length >= config.teamCount * config.rounds) return false;
-  const nextOverall = order.length + 1;
-  if (slotForOverall(nextOverall, config.teamCount) !== config.userSlot) {
-    return false;
-  }
-  return elapsedPickCount(config, now) >= order.length;
+  return waitingSlot(config, now) !== null;
 }
 
 /**
@@ -138,6 +192,7 @@ export function mockDraftResults(
   total: number;
   order: MockPlayerSeed[];
   waitingOnUser: boolean;
+  waitingSlot: number | null;
 } {
   const order = projectedDraftOrder(config);
   const readyCount = Math.min(order.length, elapsedPickCount(config, now));
@@ -150,43 +205,62 @@ export function mockDraftResults(
       playerKey: `mock.p.${player.id}`,
     };
   });
+  const blockedOn = waitingSlot(config, now);
   return {
     picks,
     total: config.teamCount * config.rounds,
     order,
-    waitingOnUser: isWaitingOnUser(config, now),
+    waitingOnUser: blockedOn !== null,
+    waitingSlot: blockedOn,
   };
 }
 
 /**
- * After the user confirms a pick, append it and rewind the clock so the next
- * opponent pick lands after one interval from `now`.
+ * Append a confirmed pick for whichever human seat is currently on the clock
+ * and rewind the clock so the next robot pick lands one interval from `now`.
+ * When `expectedSlot` is provided it must match the on-clock seat — this guards
+ * against a stale client confirming out of turn.
  */
 export function recordUserPick(
   config: MockDraftConfig,
   playerId: string,
   now: number = Date.now(),
+  expectedSlot?: number,
 ): MockDraftConfig {
-  if ((config.userPicks ?? []).includes(playerId)) {
-    throw new Error(`Player ${playerId} already recorded`);
+  const slot = waitingSlot(config, now);
+  if (slot === null) {
+    throw new Error("Mock draft is not waiting on a human pick");
+  }
+  if (expectedSlot !== undefined && expectedSlot !== slot) {
+    throw new Error(
+      `Mock draft is on the clock for slot ${slot}, not slot ${expectedSlot}`,
+    );
+  }
+  if (projectedDraftOrder(config).some((player) => player.id === playerId)) {
+    throw new Error(`Player ${playerId} is already drafted`);
   }
   if (!config.players.some((player) => player.id === playerId)) {
     throw new Error(`Unknown player ${playerId}`);
   }
-  if (!isWaitingOnUser(config)) {
-    throw new Error("Mock draft is not waiting on the user");
-  }
 
+  const { humanSlots, picksBySlot } = normalizeSeats(config);
   const picksBeforeConfirm = projectedDraftOrder(config).length;
-  const next: MockDraftConfig = {
-    ...config,
-    userPicks: [...(config.userPicks ?? []), playerId],
-  };
-  // Align the clock so only picks through the just-confirmed user selection are
-  // ready now; the next opponent pick appears after one more interval.
+  const nextPicksBySlot: Record<number, readonly string[]> = {};
+  for (const seat of humanSlots) nextPicksBySlot[seat] = picksBySlot[seat] ?? [];
+  nextPicksBySlot[slot] = [...(nextPicksBySlot[slot] ?? []), playerId];
+
+  // Align the clock so only picks through the just-confirmed selection are ready
+  // now; the next robot pick appears after one more interval.
   const doneCount = picksBeforeConfirm + 1;
   const startedAtIso = new Date(
     now - doneCount * config.intervalMs,
   ).toISOString();
-  return { ...next, startedAtIso };
+  return {
+    ...config,
+    humanSlots: [...humanSlots],
+    picksBySlot: nextPicksBySlot,
+    userSlot: undefined,
+    userPicks: undefined,
+    startedAtIso,
+  };
 }

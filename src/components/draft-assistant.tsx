@@ -38,6 +38,8 @@ interface SyncSnapshot {
     position: string;
     team: string;
   }>;
+  waitingSlot?: number | null;
+  humanSlots?: number[];
   syncedAt: string;
 }
 
@@ -211,6 +213,21 @@ export function DraftAssistant() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+  const membersRef = useRef<MemberSeat[]>(members);
+  useEffect(() => {
+    membersRef.current = members;
+  }, [members]);
+
+  /** Draft slots that pause for a human: every member with an assigned slot. */
+  function humanSlotList(): number[] {
+    const slots = new Set<number>();
+    const mine = stateRef.current.draft.userSlot;
+    if (mine) slots.add(mine);
+    for (const member of membersRef.current) {
+      if (member.draftSlot) slots.add(member.draftSlot);
+    }
+    return [...slots].sort((a, b) => a - b);
+  }
 
   function applyPayload(payload: DraftPayload, message?: string) {
     const next = normalizePersisted({
@@ -405,10 +422,13 @@ export function DraftAssistant() {
       current.draft.teamCount,
     ).slot;
     if (remote.length <= current.draft.picks.length) {
+      const waitingHuman = new Set(humanSlotList()).has(nextLocalSlot);
       setSyncStatus(
         nextLocalSlot === current.draft.userSlot
           ? `your turn · confirm locally (${current.draft.picks.length} picks)`
-          : `in sync · ${remote.length} picks`,
+          : waitingHuman && leagueKey.startsWith("mock.")
+            ? `waiting on slot ${nextLocalSlot} (${current.draft.picks.length} picks)`
+            : `in sync · ${remote.length} picks`,
       );
       return;
     }
@@ -419,14 +439,19 @@ export function DraftAssistant() {
     let applied = 0;
     const unresolved: string[] = [];
     const isMockHarness = leagueKey.startsWith("mock.");
+    const humanSlots = new Set(humanSlotList());
     for (const pick of remote.slice(current.draft.picks.length)) {
       const nextOverall = draft.picks.length + 1;
       const nextSlot = selectionForOverall(nextOverall, draft.teamCount).slot;
-      // In a real Yahoo draft your own pick shows up in draft results like
-      // everyone else's, so apply it. Only the mock harness waits for a
-      // local confirm.
-      if (isMockHarness && nextSlot === draft.userSlot) {
-        unresolved.push(`pick ${nextOverall}: your turn — confirm locally to advance`);
+      // In a real Yahoo draft everyone's pick shows up in draft results, so
+      // apply them all. In a mock, the harness pauses at every human seat until
+      // that person confirms locally, so stop when we reach one.
+      if (isMockHarness && humanSlots.has(nextSlot)) {
+        unresolved.push(
+          nextSlot === draft.userSlot
+            ? `pick ${nextOverall}: your turn — confirm locally to advance`
+            : `pick ${nextOverall}: waiting on slot ${nextSlot} to confirm`,
+        );
         break;
       }
       const mockPlayer = pick.playerKey ? mockLookup.get(pick.playerKey) : undefined;
@@ -506,19 +531,20 @@ export function DraftAssistant() {
 
   async function startMockHarness() {
     if (state.players.length < 60) {
-      setNotice("Load Chen or import a CSV before starting the mock harness.");
+      setNotice("Load Chen or import a CSV before starting a practice mock.");
       return;
     }
     if (!confirmClearBoard()) return;
     setLauncherOpen(false);
     const key = `mock.${Math.random().toString(36).slice(2, 8)}`;
-    setNotice("Starting mock draft harness…");
+    setNotice("Starting practice mock…");
     const response = await fetch("/api/yahoo/mock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         leagueKey: key,
         userSlot: state.draft.userSlot,
+        humanSlots: humanSlotList(),
         teamCount: state.draft.teamCount,
         rounds: state.draft.rounds,
         intervalMs: Math.max(1000, syncIntervalSec * 1000),
@@ -534,13 +560,13 @@ export function DraftAssistant() {
     });
     const body = await response.json();
     if (!response.ok) {
-      setNotice(`Mock harness failed: ${body.error ?? response.status}`);
+      setNotice(`Couldn't start the practice mock: ${body.error ?? response.status}`);
       return;
     }
     await mutateDraft(
       "/api/draft",
       { action: "reset", mode: "live", leagueKey: key },
-      `Mock harness ${key} running — new pick every ${syncIntervalSec}s.`,
+      `Practice mock running — robots pick every ${syncIntervalSec}s and pause at each manager's slot.`,
     );
     setLeagueKey(key);
     setSyncPaused(false);
@@ -602,12 +628,13 @@ export function DraftAssistant() {
             action: "confirm",
             leagueKey,
             playerId: player.id,
+            slot: state.draft.userSlot,
           }),
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
           setNotice(
-            `Mock harness rejected confirm: ${body.error ?? response.status}`,
+            `Couldn't record that pick: ${body.error ?? response.status}`,
           );
           return;
         }
@@ -774,7 +801,7 @@ export function DraftAssistant() {
           <div className="brand-copy">
             <p className="eyebrow">Cobra Kai · Full Contact · 2026</p>
             <h1>Conroy&apos;s AI Draft Dojo</h1>
-            <p className="brand-tagline">Strike first. Draft smart. Conroy&apos;s AI gonna fuck you up.</p>
+            <p className="brand-tagline">Strike first. Draft smart. Show no mercy.</p>
           </div>
         </div>
         <div className="status-row">
@@ -947,9 +974,10 @@ export function DraftAssistant() {
                   <span className="launcher-badge">recommended</span>
                 </header>
                 <p>
-                  11 computer opponents pick for themselves every {syncIntervalSec}{" "}
-                  seconds. When it reaches your slot the room pauses until you
-                  confirm a pick — just like a real draft clock.
+                  Robots draft the open seats every {syncIntervalSec} seconds
+                  and pause at <strong>every real manager&apos;s slot</strong>{" "}
+                  until that person confirms — so all {humanSlotList().length}{" "}
+                  of you can rehearse together, each on your own screen.
                 </p>
                 <button onClick={() => void startMockHarness()}>
                   Start practice mock
@@ -1253,7 +1281,7 @@ export function DraftAssistant() {
               </div>
 
               <div className="admin-section">
-                <p className="admin-label">Mock harness &amp; live sync</p>
+                <p className="admin-label">Advanced: practice robots &amp; live sync</p>
                 <div className="sync-panel">
                   <label>
                     League key
@@ -1279,7 +1307,7 @@ export function DraftAssistant() {
                   </label>
                   <div className="sync-actions">
                     <button className="secondary" onClick={startMockHarness}>
-                      Start mock harness
+                      Start practice mock
                     </button>
                     <button
                       className="secondary"
