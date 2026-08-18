@@ -4,6 +4,8 @@ import {
   assignRosterSlot,
   createDraftState,
   makeManualPick,
+  opponentPick,
+  simulateToUserTurn,
   openStarterSlots,
   overallPickFor,
   picksForSlot,
@@ -168,5 +170,29 @@ describe("stale synchronization guard", () => {
     expect(guard.accept({ sequence: 1 })).toBe(false);
     expect(guard.accept({ sequence: 0 })).toBe(false);
     expect(guard.current()).toEqual({ sequence: 1 });
+  });
+});
+
+describe("shared opponent simulation", () => {
+  it("appends a pick without dropping existing selections", () => {
+    let state = createDraftState(5);
+    state = makeManualPick(state, player("1", "WR"));
+    const next = opponentPick(state, [
+      player("1", "WR"),
+      player("2", "RB"),
+      player("3", "TE"),
+    ]);
+    expect(next.picks).toHaveLength(2);
+    expect(next.picks[0].player.id).toBe("1");
+    expect(next.picks[1].player.id).toBe("2");
+  });
+
+  it("simulates only until the user slot", () => {
+    const pool = Array.from({ length: 12 }, (_, index) =>
+      player(String(index + 1), "WR"),
+    );
+    const next = simulateToUserTurn(createDraftState(3), pool);
+    expect(next.picks).toHaveLength(2);
+    expect(next.picks.map((item) => item.slot)).toEqual([1, 2]);
   });
 });

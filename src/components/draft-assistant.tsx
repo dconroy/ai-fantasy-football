@@ -10,7 +10,6 @@ import {
   recommendPlayers,
   rosterPicks,
   selectionForOverall,
-  undoLastPick,
   type DraftState,
   type Player,
   type Position,
@@ -47,6 +46,27 @@ const POSITIONS: readonly (Position | "ALL")[] = [
   "ALL", "QB", "RB", "WR", "TE", "K", "DEF",
 ];
 
+interface MemberSeat {
+  id: string;
+  displayName: string;
+  draftSlot: number | null;
+  teamName: string | null;
+  role: string;
+  status: string;
+}
+
+interface MeState {
+  id: string;
+  displayName: string;
+  role: "admin" | "member";
+  draftSlot: number;
+  teamName: string;
+  pins: string[];
+  avoids: string[];
+  weights: StrategyWeights;
+  darkMode: boolean;
+}
+
 interface PersistedUiState {
   mode: "mock" | "live";
   draft: DraftState;
@@ -56,6 +76,20 @@ interface PersistedUiState {
   importedAt: string;
   source: string;
   weights: StrategyWeights;
+  updatedAt?: string;
+  leagueKey?: string | null;
+}
+
+interface DraftPayload {
+  mode: "mock" | "live";
+  draft: DraftState;
+  players: readonly Player[];
+  importedAt: string;
+  source: string;
+  updatedAt: string;
+  leagueKey?: string | null;
+  members: MemberSeat[];
+  me: MeState;
 }
 
 const initialState: PersistedUiState = {
@@ -119,22 +153,6 @@ function download(filename: string, body: string, type: string) {
   URL.revokeObjectURL(anchor.href);
 }
 
-function opponentPick(state: DraftState, players: readonly Player[]) {
-  const candidates = [...availablePlayers(state, players)].sort(
-    (a, b) =>
-      (a.chenRank ?? Number.MAX_SAFE_INTEGER) -
-      (b.chenRank ?? Number.MAX_SAFE_INTEGER),
-  );
-  for (const player of candidates) {
-    try {
-      return makeManualPick(state, player);
-    } catch {
-      // Try the next roster-eligible player.
-    }
-  }
-  return state;
-}
-
 function scoreComparison(
   first: ReturnType<typeof recommendPlayers>["recommendations"][number],
   alternative: ReturnType<typeof recommendPlayers>["recommendations"][number],
@@ -168,21 +186,49 @@ export function DraftAssistant() {
   const [leagueKey, setLeagueKey] = useState("");
   const [syncIntervalSec, setSyncIntervalSec] = useState(5);
   const [syncStatus, setSyncStatus] = useState<string>("idle");
+  const [me, setMe] = useState<MeState | null>(null);
+  const [members, setMembers] = useState<MemberSeat[]>([]);
+  const [adminUsers, setAdminUsers] = useState<MemberSeat[]>([]);
   const importRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
+  function applyPayload(payload: DraftPayload, message?: string) {
+    const next = normalizePersisted({
+      mode: payload.mode,
+      draft: {
+        ...payload.draft,
+        userSlot: payload.me.draftSlot,
+      },
+      players: payload.players,
+      importedAt: payload.importedAt,
+      source: payload.source,
+      pins: payload.me.pins,
+      avoids: payload.me.avoids,
+      weights: payload.me.weights,
+      updatedAt: payload.updatedAt,
+      leagueKey: payload.leagueKey,
+    });
+    setState(next);
+    setMe(payload.me);
+    setMembers(payload.members);
+    setDark(payload.me.darkMode);
+    if (payload.leagueKey) setLeagueKey(payload.leagueKey);
+    if (message) setNotice(message);
+  }
+
   useEffect(() => {
-    setDark(window.matchMedia("(prefers-color-scheme: dark)").matches);
     let cancelled = false;
-    fetch("/api/session")
+    fetch("/api/draft")
       .then((response) => (response.ok ? response.json() : null))
-      .then((shared: PersistedUiState | null) => {
-        if (!cancelled) {
-          setState(shared?.draft && shared?.players ? normalizePersisted(shared) : hydrate());
-          setNotice(shared ? "Loaded shared draft state" : "Simulation ready");
+      .then((payload: DraftPayload | null) => {
+        if (cancelled) return;
+        if (payload?.draft && payload.players && payload.me) {
+          applyPayload(payload, "Loaded shared draft board");
+        } else {
+          setState(hydrate());
         }
       })
       .catch(() => {
@@ -197,6 +243,20 @@ export function DraftAssistant() {
   }, []);
 
   useEffect(() => {
+    if (!ready) return;
+    const timer = window.setInterval(() => {
+      fetch("/api/draft", { cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((payload: DraftPayload | null) => {
+          if (!payload?.updatedAt || payload.updatedAt === stateRef.current.updatedAt) return;
+          applyPayload(payload);
+        })
+        .catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [ready]);
+
+  useEffect(() => {
     fetch("/api/yahoo/status")
       .then((response) => response.json())
       .then((status: { connected?: boolean }) =>
@@ -204,23 +264,40 @@ export function DraftAssistant() {
       )
       .catch(() => setYahooConnected(false));
     const yahooResult = new URLSearchParams(window.location.search).get("yahoo");
-    if (yahooResult === "connected") setNotice("Yahoo connected successfully.");
+    if (yahooResult === "connected") setNotice("Yahoo signed in.");
     if (yahooResult === "denied") setNotice("Yahoo authorization was cancelled.");
     if (yahooResult === "error") setNotice("Yahoo authorization failed.");
   }, []);
 
   useEffect(() => {
-    if (!ready) return;
+    if (me?.role !== "admin") return;
+    fetch("/api/admin/users")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { users?: MemberSeat[] } | null) => {
+        if (body?.users) setAdminUsers(body.users);
+      })
+      .catch(() => undefined);
+  }, [me?.role, members]);
+
+  useEffect(() => {
+    if (!ready || !me) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     const timeout = window.setTimeout(() => {
-      fetch("/api/session", {
+      fetch("/api/me", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(state),
+        body: JSON.stringify({
+          draftSlot: state.draft.userSlot,
+          pins: state.pins,
+          avoids: state.avoids,
+          weights: state.weights,
+          darkMode: dark,
+          teamName: me.teamName,
+        }),
       }).catch(() => undefined);
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [ready, state]);
+  }, [ready, state.draft.userSlot, state.pins, state.avoids, state.weights, dark, me]);
 
   const current = selectionForOverall(state.draft.picks.length + 1);
   const nextMine = nextSelectionForSlot(
@@ -237,7 +314,7 @@ export function DraftAssistant() {
     () => availablePlayers(state.draft, state.players),
     [state.draft, state.players],
   );
-  const avoids = state.avoids ?? [];
+  const avoids = useMemo(() => state.avoids ?? [], [state.avoids]);
   const recommendation = useMemo(
     () =>
       recommendPlayers(state.draft, state.players, {
@@ -270,9 +347,31 @@ export function DraftAssistant() {
       );
     });
 
-  function updateDraft(draft: DraftState, message: string) {
-    setState((previous) => ({ ...previous, draft }));
-    setNotice(message);
+  async function mutateDraft(
+    path: string,
+    body: Record<string, unknown>,
+    message: string,
+  ) {
+    const response = await fetch(path, {
+      method: path.includes("/pick") ? "POST" : "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = (await response.json().catch(() => null)) as DraftPayload & {
+      error?: string;
+    };
+    if (!response.ok || !payload?.draft) {
+      setNotice(payload?.error ?? "Draft update failed");
+      return false;
+    }
+    applyPayload(payload, message);
+    return true;
+  }
+
+  function teamLabel(slot: number) {
+    if (slot === state.draft.userSlot) return me?.teamName || "COBRA KAI";
+    const occupant = members.find((member) => member.draftSlot === slot);
+    return occupant?.teamName || occupant?.displayName || `T${slot}`;
   }
 
   function reconcileRemote(snapshot: SyncSnapshot) {
@@ -329,7 +428,11 @@ export function DraftAssistant() {
       }
     }
     if (applied > 0) {
-      setState((previous) => ({ ...previous, draft }));
+      void mutateDraft(
+        "/api/draft",
+        { action: "picks", picks: draft.picks, expectedUpdatedAt: current.updatedAt },
+        `Synced ${applied} remote pick(s).`,
+      );
     }
     if (unresolved.length) {
       setSyncStatus(`${remote.length} remote · stopped at ${unresolved[0]}`);
@@ -406,20 +509,17 @@ export function DraftAssistant() {
       setNotice(`Mock harness failed: ${body.error ?? response.status}`);
       return;
     }
-    setState((previous) => ({
-      ...previous,
-      mode: "live",
-      draft: createDraftState(previous.draft.userSlot),
-    }));
+    await mutateDraft(
+      "/api/draft",
+      { action: "reset", mode: "live", leagueKey: key },
+      `Mock harness ${key} running — new pick every ${syncIntervalSec}s.`,
+    );
     setLeagueKey(key);
     setSyncPaused(false);
     setSelected(null);
-    setNotice(
-      `Mock harness ${key} running — new pick every ${syncIntervalSec}s. Live sync polling.`,
-    );
   }
 
-  function startSession(mode: "mock" | "live") {
+  async function startSession(mode: "mock" | "live") {
     if (
       state.draft.picks.length > 0 &&
       !window.confirm(
@@ -428,17 +528,14 @@ export function DraftAssistant() {
     ) {
       return;
     }
-    setState((previous) => ({
-      ...previous,
-      mode,
-      draft: createDraftState(previous.draft.userSlot),
-    }));
     setSelected(null);
     setSyncPaused(mode === "mock");
     setAutoDisabled(true);
-    setNotice(
+    await mutateDraft(
+      "/api/draft",
+      { action: "reset", mode },
       mode === "mock"
-        ? `Joined a new local mock draft from slot ${state.draft.userSlot}.`
+        ? `Joined a new mock draft from slot ${state.draft.userSlot}.`
         : `Live board reset and ready from slot ${state.draft.userSlot}.`,
     );
   }
@@ -449,9 +546,6 @@ export function DraftAssistant() {
       return;
     }
     try {
-      const next = makeManualPick(state.draft, player, {
-        madeAt: new Date().toISOString(),
-      });
       if (leagueKey.startsWith("mock.")) {
         const response = await fetch("/api/yahoo/mock", {
           method: "POST",
@@ -469,48 +563,38 @@ export function DraftAssistant() {
           );
           return;
         }
-        updateDraft(
-          next,
-          `Confirmed ${player.name}. Mock resume — next opponent in ~${syncIntervalSec}s.`,
-        );
-      } else {
-        updateDraft(
-          next,
-          `Confirmed ${player.name} locally. Still submit the pick in Yahoo.`,
-        );
       }
-      setSelected(null);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Unable to record pick");
-    }
-  }
-
-  function markDrafted(player: Player) {
-    try {
-      updateDraft(
-        makeManualPick(state.draft, player, { madeAt: new Date().toISOString() }),
-        `Recorded ${player.name} at pick ${current.overall}.`,
+      const ok = await mutateDraft(
+        "/api/draft/pick",
+        { playerId: player.id },
+        leagueKey.startsWith("mock.")
+          ? `Confirmed ${player.name}. Mock resume — next opponent in ~${syncIntervalSec}s.`
+          : `Confirmed ${player.name} locally. Still submit the pick in Yahoo.`,
       );
+      if (ok) setSelected(null);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to record pick");
     }
   }
 
-  function simulateToTurn() {
+  async function markDrafted(player: Player) {
+    await mutateDraft(
+      "/api/draft/pick",
+      { playerId: player.id },
+      `Recorded ${player.name} at pick ${current.overall}.`,
+    );
+  }
+
+  async function simulateToTurn() {
     if (state.mode !== "mock") {
       setNotice("Simulation is disabled on the live draft board.");
       return;
     }
-    let next = state.draft;
-    while (
-      next.picks.length < next.teamCount * next.rounds &&
-      selectionForOverall(next.picks.length + 1, next.teamCount).slot !== next.userSlot
-    ) {
-      const advanced = opponentPick(next, state.players);
-      if (advanced === next) break;
-      next = advanced;
-    }
-    updateDraft(next, `Simulated through pick ${next.picks.length}.`);
+    await mutateDraft(
+      "/api/draft/pick",
+      { action: "simulate" },
+      "Simulated to your pick.",
+    );
   }
 
   function toggleList(key: "pins" | "avoids", id: string) {
@@ -541,16 +625,16 @@ export function DraftAssistant() {
       byeWeek: player.byeWeek,
       adp: player.adp,
     }));
-    setState((previous) => ({
-      ...previous,
-      players,
-      importedAt: parsed.importedAt,
-      source: parsed.source,
-      draft: createDraftState(previous.draft.userSlot),
-      pins: [],
-      avoids: [],
-    }));
-    setNotice(`Imported ${players.length} players; ${parsed.warnings.length} warning(s).`);
+    await mutateDraft(
+      "/api/draft",
+      {
+        action: "players",
+        players,
+        importedAt: parsed.importedAt,
+        source: parsed.source,
+      },
+      `Imported ${players.length} players; ${parsed.warnings.length} warning(s).`,
+    );
   }
 
   async function fetchChen() {
@@ -574,16 +658,16 @@ export function DraftAssistant() {
           adp: player.adp,
         }),
       );
-      setState((previous) => ({
-        ...previous,
-        players,
-        importedAt: parsed.importedAt,
-        source: parsed.source,
-        draft: createDraftState(previous.draft.userSlot),
-        pins: [],
-        avoids: [],
-      }));
-      setNotice(`Loaded ${players.length} current source records.`);
+      await mutateDraft(
+        "/api/draft",
+        {
+          action: "players",
+          players,
+          importedAt: parsed.importedAt,
+          source: parsed.source,
+        },
+        `Loaded ${players.length} current source records.`,
+      );
     } catch (error) {
       setNotice(
         `${error instanceof Error ? error.message : "Chen fetch failed"}. Use manual CSV import.`,
@@ -622,12 +706,17 @@ export function DraftAssistant() {
             ● {state.mode === "mock" ? "Mock draft" : "Live board"}
           </span>
           {yahooConnected ? (
-            <span className="status connected">● Yahoo connected</span>
+            <span className="status connected">
+              ● {me?.displayName ?? "Yahoo"} signed in
+            </span>
           ) : (
             <a className="status yahoo-connect" href="/api/yahoo/auth">
-              Connect Yahoo
+              Sign in with Yahoo
             </a>
           )}
+          <form action="/api/auth/logout" method="post">
+            <button className="icon-button" type="submit">Sign out</button>
+          </form>
           <button className="icon-button" onClick={() => setDark((value) => !value)}>
             {dark ? "Light" : "Dark"}
           </button>
@@ -665,16 +754,14 @@ export function DraftAssistant() {
         </button>
         <button
           className="secondary"
-          onClick={() => updateDraft(opponentPick(state.draft, state.players), "Advanced one pick.")}
+          onClick={() => void mutateDraft("/api/draft/pick", { action: "advance" }, "Advanced one pick.")}
           disabled={state.mode !== "mock" || isMyTurn}
         >
           Advance one
         </button>
         <button
           className="secondary"
-          onClick={() => {
-            updateDraft(undoLastPick(state.draft), "Undid the latest pick.");
-          }}
+          onClick={() => void mutateDraft("/api/draft/pick", { action: "undo" }, "Undid the latest pick.")}
           disabled={!state.draft.picks.length}
         >
           Undo
@@ -897,6 +984,62 @@ export function DraftAssistant() {
               </div>
               <p className="sync-status">Status: {syncStatus}</p>
             </div>
+            {me?.role === "admin" && (
+              <div className="member-list">
+                <p className="eyebrow">League-mates</p>
+                {adminUsers.map((user) => (
+                  <div className="member-row" key={user.id}>
+                    <span>
+                      {user.displayName} · {user.status}
+                      {user.draftSlot ? ` · slot ${user.draftSlot}` : ""}
+                    </span>
+                    {user.status === "pending" ? (
+                      <button
+                        className="secondary"
+                        onClick={async () => {
+                          await fetch("/api/admin/users", {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: user.id, status: "active" }),
+                          });
+                          setMembers((previous) =>
+                            previous.map((member) =>
+                              member.id === user.id ? { ...member, status: "active" } : member,
+                            ),
+                          );
+                          setAdminUsers((previous) =>
+                            previous.map((member) =>
+                              member.id === user.id ? { ...member, status: "active" } : member,
+                            ),
+                          );
+                        }}
+                      >
+                        Approve
+                      </button>
+                    ) : (
+                      <button
+                        className="secondary"
+                        onClick={async () => {
+                          if (user.role === "admin") return;
+                          await fetch("/api/admin/users", {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: user.id, status: "pending" }),
+                          });
+                          setAdminUsers((previous) =>
+                            previous.map((member) =>
+                              member.id === user.id ? { ...member, status: "pending" } : member,
+                            ),
+                          );
+                        }}
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           <section className="panel exports">
@@ -924,7 +1067,7 @@ export function DraftAssistant() {
         <div className="board-grid">
           {Array.from({ length: 12 }, (_, index) => (
             <div className={`board-team ${index + 1 === state.draft.userSlot ? "mine" : ""}`} key={index}>
-              <strong>{index + 1 === state.draft.userSlot ? "COBRA KAI" : `T${index + 1}`}</strong>
+              <strong>{teamLabel(index + 1)}</strong>
               {state.draft.picks
                 .filter((pick) => pick.slot === index + 1)
                 .map((pick) => (

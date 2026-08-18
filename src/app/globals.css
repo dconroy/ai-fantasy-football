@@ -859,6 +859,38 @@ h2 {
   color: #f1d892;
 }
 
+.yahoo-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 43px;
+  margin-top: 8px;
+  border: 1px solid #176b43;
+  border-radius: 3px;
+  background: #176b43;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.member-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px 13px 14px;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+}
+
+.member-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
 .security-console small {
   display: block;
   margin-top: 20px;

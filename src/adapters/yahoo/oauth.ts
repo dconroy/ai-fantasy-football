@@ -1,9 +1,11 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { prisma } from "@/persistence/prisma";
+import type { User } from "@prisma/client";
 
 const AUTHORIZE_URL = "https://api.login.yahoo.com/oauth2/request_auth";
 const TOKEN_URL = "https://api.login.yahoo.com/oauth2/get_token";
-const CREDENTIAL_ID = "yahoo-primary";
+const LEGACY_CREDENTIAL_ID = "yahoo-primary";
+const MAX_USERS = 8;
 
 interface YahooTokenResponse {
   access_token: string;
@@ -11,6 +13,12 @@ interface YahooTokenResponse {
   expires_in: number;
   token_type?: string;
   scope?: string;
+  xoauth_yahoo_guid?: string;
+}
+
+export interface YahooLoginResult {
+  user: User;
+  accessToken: string;
 }
 
 function required(name: string) {
@@ -85,65 +93,177 @@ async function requestTokens(parameters: URLSearchParams): Promise<YahooTokenRes
   return body;
 }
 
-async function persistTokens(tokens: YahooTokenResponse, existingRefresh?: string) {
+export function yahooGuidFromTokens(tokens: YahooTokenResponse): string | null {
+  if (tokens.xoauth_yahoo_guid) return tokens.xoauth_yahoo_guid;
+  const parts = tokens.access_token.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as {
+      sub?: string;
+      guid?: string;
+      xoauth_yahoo_guid?: string;
+    };
+    return payload.xoauth_yahoo_guid ?? payload.guid ?? payload.sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function displayNameFromTokens(tokens: YahooTokenResponse, guid: string) {
+  const parts = tokens.access_token.split(".");
+  if (parts.length === 3) {
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as {
+        name?: string;
+        nickname?: string;
+      };
+      if (payload.name?.trim()) return payload.name.trim();
+      if (payload.nickname?.trim()) return payload.nickname.trim();
+    } catch {
+      // Fall through to GUID label.
+    }
+  }
+  return `Yahoo ${guid.slice(-6)}`;
+}
+
+async function persistUserTokens(
+  user: User,
+  tokens: YahooTokenResponse,
+  existingRefresh?: string,
+): Promise<User> {
   const refreshToken = tokens.refresh_token ?? existingRefresh;
   if (!refreshToken) throw new Error("Yahoo did not return a refresh token");
   const expiresAt = new Date(Date.now() + Math.max(60, tokens.expires_in) * 1_000);
-  await prisma.oAuthCredential.upsert({
-    where: { id: CREDENTIAL_ID },
-    create: {
-      id: CREDENTIAL_ID,
-      encryptedAccessToken: encrypt(tokens.access_token),
-      encryptedRefreshToken: encrypt(refreshToken),
-      expiresAt,
-      scope: tokens.scope,
-    },
-    update: {
+  return prisma.user.update({
+    where: { id: user.id },
+    data: {
       encryptedAccessToken: encrypt(tokens.access_token),
       encryptedRefreshToken: encrypt(refreshToken),
       expiresAt,
       scope: tokens.scope,
     },
   });
-  return tokens.access_token;
 }
 
-export async function exchangeYahooCode(code: string) {
+export async function exchangeYahooCode(code: string): Promise<YahooLoginResult> {
   const tokens = await requestTokens(
     new URLSearchParams({ grant_type: "authorization_code", code }),
   );
-  return persistTokens(tokens);
+  const guid = yahooGuidFromTokens(tokens);
+  if (!guid) throw new Error("Yahoo did not return a user id");
+  if (!tokens.refresh_token) throw new Error("Yahoo did not return a refresh token");
+
+  const existing = await prisma.user.findUnique({ where: { yahooGuid: guid } });
+  const userCount = await prisma.user.count();
+  if (!existing && userCount >= MAX_USERS) {
+    throw new Error("This draft room is full");
+  }
+
+  const expiresAt = new Date(Date.now() + Math.max(60, tokens.expires_in) * 1_000);
+  const isFirst = !existing && userCount === 0;
+  const user = existing
+    ? await persistUserTokens(existing, tokens, existing.encryptedRefreshToken ? decrypt(existing.encryptedRefreshToken) : undefined)
+    : await prisma.user.create({
+        data: {
+          yahooGuid: guid,
+          displayName: displayNameFromTokens(tokens, guid),
+          role: isFirst ? "admin" : "member",
+          status: isFirst ? "active" : "pending",
+          encryptedAccessToken: encrypt(tokens.access_token),
+          encryptedRefreshToken: encrypt(tokens.refresh_token),
+          expiresAt,
+          scope: tokens.scope,
+          draftSlot: isFirst ? 5 : null,
+          teamName: isFirst ? "Cobra Kai" : null,
+        },
+      });
+
+  return { user, accessToken: tokens.access_token };
 }
 
-export async function getYahooConnectionStatus() {
-  const credential = await prisma.oAuthCredential.findUnique({
-    where: { id: CREDENTIAL_ID },
+export async function getYahooConnectionStatus(user?: User | null) {
+  const credential = user
+    ? user
+    : await prisma.user.findFirst({
+        where: { status: "active" },
+        orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+      });
+  if (credential) {
+    return {
+      connected: true,
+      expiresAt: credential.expiresAt.toISOString(),
+      scope: credential.scope,
+      updatedAt: credential.updatedAt.toISOString(),
+    };
+  }
+  const legacy = await prisma.oAuthCredential.findUnique({
+    where: { id: LEGACY_CREDENTIAL_ID },
     select: { expiresAt: true, scope: true, updatedAt: true },
   });
-  return credential
+  return legacy
     ? {
         connected: true,
-        expiresAt: credential.expiresAt.toISOString(),
-        scope: credential.scope,
-        updatedAt: credential.updatedAt.toISOString(),
+        expiresAt: legacy.expiresAt.toISOString(),
+        scope: legacy.scope,
+        updatedAt: legacy.updatedAt.toISOString(),
       }
     : { connected: false };
 }
 
-export async function getValidYahooAccessToken() {
-  const credential = await prisma.oAuthCredential.findUnique({
-    where: { id: CREDENTIAL_ID },
-  });
-  if (!credential) throw new Error("Yahoo is not connected");
-  if (credential.expiresAt.getTime() > Date.now() + 5 * 60_000) {
-    return decrypt(credential.encryptedAccessToken);
+async function refreshUserToken(user: User) {
+  if (user.expiresAt.getTime() > Date.now() + 5 * 60_000) {
+    return decrypt(user.encryptedAccessToken);
   }
-  const refreshToken = decrypt(credential.encryptedRefreshToken);
+  const refreshToken = decrypt(user.encryptedRefreshToken);
   const tokens = await requestTokens(
     new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
     }),
   );
-  return persistTokens(tokens, refreshToken);
+  await persistUserTokens(user, tokens, refreshToken);
+  return tokens.access_token;
+}
+
+export async function getValidYahooAccessToken(preferredUser?: User | null) {
+  if (preferredUser) return refreshUserToken(preferredUser);
+
+  const admin = await prisma.user.findFirst({
+    where: { status: "active", role: "admin" },
+    orderBy: { createdAt: "asc" },
+  });
+  if (admin) return refreshUserToken(admin);
+
+  const member = await prisma.user.findFirst({
+    where: { status: "active" },
+    orderBy: { createdAt: "asc" },
+  });
+  if (member) return refreshUserToken(member);
+
+  const legacy = await prisma.oAuthCredential.findUnique({
+    where: { id: LEGACY_CREDENTIAL_ID },
+  });
+  if (!legacy) throw new Error("Yahoo is not connected");
+  if (legacy.expiresAt.getTime() > Date.now() + 5 * 60_000) {
+    return decrypt(legacy.encryptedAccessToken);
+  }
+  const refreshToken = decrypt(legacy.encryptedRefreshToken);
+  const tokens = await requestTokens(
+    new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  );
+  const nextRefresh = tokens.refresh_token ?? refreshToken;
+  const expiresAt = new Date(Date.now() + Math.max(60, tokens.expires_in) * 1_000);
+  await prisma.oAuthCredential.update({
+    where: { id: LEGACY_CREDENTIAL_ID },
+    data: {
+      encryptedAccessToken: encrypt(tokens.access_token),
+      encryptedRefreshToken: encrypt(nextRefresh),
+      expiresAt,
+      scope: tokens.scope,
+    },
+  });
+  return tokens.access_token;
 }

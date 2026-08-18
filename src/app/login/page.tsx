@@ -7,7 +7,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [houseUnlocked, setHouseUnlocked] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const [yahooError, setYahooError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioPlayCount = useRef(1);
 
@@ -23,8 +25,21 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    audioPlayCount.current = 1;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("yahoo") === "denied") setYahooError("Yahoo authorization was cancelled.");
+    if (params.get("yahoo") === "error") {
+      setYahooError(params.get("message") ?? "Yahoo authorization failed.");
+    }
+    if (params.get("step") === "yahoo") setHouseUnlocked(true);
 
+    fetch("/api/auth/gate")
+      .then((response) => response.json())
+      .then((body: { house?: boolean }) => {
+        if (body.house) setHouseUnlocked(true);
+      })
+      .catch(() => undefined);
+
+    audioPlayCount.current = 1;
     const removeUnlockListeners = () => {
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
@@ -34,13 +49,11 @@ export default function LoginPage() {
         if (played) removeUnlockListeners();
       });
     };
-
     window.addEventListener("pointerdown", unlockAudio);
     window.addEventListener("keydown", unlockAudio);
     void playAudio().then((played) => {
       if (played) removeUnlockListeners();
     });
-
     return removeUnlockListeners;
   }, [playAudio]);
 
@@ -54,7 +67,9 @@ export default function LoginPage() {
       body: JSON.stringify({ password }),
     });
     if (response.ok) {
-      window.location.assign("/");
+      setHouseUnlocked(true);
+      setPassword("");
+      setLoading(false);
       return;
     }
     setError(true);
@@ -62,9 +77,11 @@ export default function LoginPage() {
     setLoading(false);
   }
 
+  const denied = error || Boolean(yahooError);
+
   return (
     <main className="security-screen">
-      <section className={`security-console ${error ? "denied" : ""}`}>
+      <section className={`security-console ${denied ? "denied" : ""}`}>
         <div className="security-scanline" />
         <audio
           ref={audioRef}
@@ -92,11 +109,14 @@ export default function LoginPage() {
           <i />
         </div>
         <p className="security-kicker">Full Contact Security System</p>
-        <h1>{error ? "Uh uh uh!" : "Restricted system"}</h1>
+        <h1>{denied ? "Uh uh uh!" : houseUnlocked ? "Identify yourself" : "Restricted system"}</h1>
         <p className="security-message">
-          {error
-            ? "You forgot the magic word."
-            : "Conroy’s AI requires authorization before league destruction can commence."}
+          {yahooError ??
+            (error
+              ? "You forgot the magic word."
+              : houseUnlocked
+                ? "Magic word accepted. Sign in with Yahoo so we know which seat is yours."
+                : "Say the magic word before Yahoo will even look at you.")}
         </p>
         {audioBlocked && (
           <button
@@ -110,21 +130,27 @@ export default function LoginPage() {
             Enable security audio
           </button>
         )}
-        <form onSubmit={submit}>
-          <label htmlFor="access-password">Magic word</label>
-          <input
-            id="access-password"
-            type="password"
-            autoComplete="current-password"
-            autoFocus
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="••••••••••••"
-          />
-          <button disabled={loading || !password}>
-            {loading ? "Checking credentials…" : "Access command center"}
-          </button>
-        </form>
+        {houseUnlocked ? (
+          <a className="yahoo-login" href="/api/yahoo/auth">
+            Continue with Yahoo
+          </a>
+        ) : (
+          <form onSubmit={submit}>
+            <label htmlFor="access-password">Magic word</label>
+            <input
+              id="access-password"
+              type="password"
+              autoComplete="current-password"
+              autoFocus
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="••••••••••••"
+            />
+            <button disabled={loading || !password}>
+              {loading ? "Checking credentials…" : "Access command center"}
+            </button>
+          </form>
+        )}
         <small>Unauthorized roster tinkering will be mocked by the machine.</small>
       </section>
     </main>

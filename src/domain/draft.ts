@@ -68,3 +68,32 @@ export function availablePlayers(
   const drafted = new Set(state.picks.map((pick) => pick.player.id));
   return players.filter((player) => !drafted.has(player.id));
 }
+
+export function opponentPick(state: DraftState, players: readonly Player[]) {
+  const candidates = [...availablePlayers(state, players)].sort(
+    (a, b) =>
+      (a.chenRank ?? Number.MAX_SAFE_INTEGER) -
+      (b.chenRank ?? Number.MAX_SAFE_INTEGER),
+  );
+  for (const player of candidates) {
+    try {
+      return makeManualPick(state, player);
+    } catch {
+      // Try the next roster-eligible player.
+    }
+  }
+  return state;
+}
+
+export function simulateToUserTurn(state: DraftState, players: readonly Player[]) {
+  let next = state;
+  while (
+    next.picks.length < next.teamCount * next.rounds &&
+    selectionForOverall(next.picks.length + 1, next.teamCount).slot !== next.userSlot
+  ) {
+    const advanced = opponentPick(next, players);
+    if (advanced === next) break;
+    next = advanced;
+  }
+  return next;
+}

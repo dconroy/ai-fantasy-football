@@ -1,10 +1,16 @@
 import { randomBytes } from "node:crypto";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { ACCESS_COOKIE_NAME, validAccessToken } from "@/auth/access";
 import { createYahooAuthorizationUrl } from "@/adapters/yahoo/oauth";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const houseOk = await validAccessToken(request.cookies.get(ACCESS_COOKIE_NAME)?.value);
+  if (!houseOk) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   try {
     const state = randomBytes(24).toString("base64url");
     const response = NextResponse.redirect(createYahooAuthorizationUrl(state));

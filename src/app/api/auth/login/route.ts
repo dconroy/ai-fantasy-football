@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "You forgot the magic word." }, { status: 401 });
   }
 
-  const response = NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true, next: "yahoo" });
   response.cookies.set(ACCESS_COOKIE_NAME, await createAccessToken(expected), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

@@ -1,41 +1,42 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/persistence/prisma";
+import { AuthError, requireActiveUser } from "@/auth/current-user";
+import {
+  draftStateFor,
+  getOrCreateLeagueDraft,
+  listMemberSeats,
+  userPrefs,
+} from "@/persistence/league-draft";
 
 export const runtime = "nodejs";
-const LOCAL_SESSION_ID = "local-simulation";
 
+/** @deprecated Use /api/draft. Kept so older clients still load the shared board. */
 export async function GET() {
-  const session = await prisma.draftSession.findUnique({
-    where: { id: LOCAL_SESSION_ID },
-  });
-  return NextResponse.json(session ? JSON.parse(session.stateJson) : null);
+  try {
+    const [shared, members, user] = await Promise.all([
+      getOrCreateLeagueDraft(),
+      listMemberSeats(),
+      requireActiveUser(),
+    ]);
+    const prefs = userPrefs(user);
+    return NextResponse.json({
+      ...shared,
+      draft: draftStateFor(shared, prefs.draftSlot),
+      members,
+      pins: prefs.pins,
+      avoids: prefs.avoids,
+      weights: prefs.weights,
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    return NextResponse.json(null);
+  }
 }
 
-export async function PUT(request: Request) {
-  const body = (await request.json()) as {
-    draftSlot?: number;
-    draft?: { userSlot?: number };
-    leagueKey?: string;
-    [key: string]: unknown;
-  };
-  const draftSlot = Math.min(
-    12,
-    Math.max(1, Number(body.draftSlot ?? body.draft?.userSlot) || 1),
+export async function PUT() {
+  return NextResponse.json(
+    { error: "Use /api/me for preferences and /api/draft for the shared board" },
+    { status: 410 },
   );
-  const session = await prisma.draftSession.upsert({
-    where: { id: LOCAL_SESSION_ID },
-    create: {
-      id: LOCAL_SESSION_ID,
-      name: "Local simulation",
-      draftSlot,
-      leagueKey: typeof body.leagueKey === "string" ? body.leagueKey : null,
-      stateJson: JSON.stringify(body),
-    },
-    update: {
-      draftSlot,
-      leagueKey: typeof body.leagueKey === "string" ? body.leagueKey : null,
-      stateJson: JSON.stringify(body),
-    },
-  });
-  return NextResponse.json({ savedAt: session.updatedAt.toISOString() });
 }
