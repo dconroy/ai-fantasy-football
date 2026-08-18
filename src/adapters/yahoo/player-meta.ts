@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/persistence/prisma";
-import { normalizePlayerName } from "@/domain/identity";
+import { normalizePlayerName, normalizeTeam } from "@/domain/identity";
 import { getValidYahooAccessToken } from "./oauth";
 import { YahooApi } from "./yahoo-api";
 
@@ -36,6 +36,16 @@ export interface PlayerMetaHit {
   readonly percentOwned?: number;
   readonly playerKey?: string;
   readonly status?: string;
+}
+
+export interface PlayerMetaIndex {
+  /** name+position → metadata, for matching skill players and kickers. */
+  readonly players: Map<string, PlayerMetaHit>;
+  /**
+   * Canonical team abbreviation (e.g. "PHI") → bye week. Derived from every
+   * player's team, so it resolves byes for defenses that never match by name.
+   */
+  readonly teamBye: Map<string, number>;
 }
 
 /** Key a player by normalized name + position for cross-source matching. */
@@ -130,14 +140,12 @@ export async function refreshYahooPlayerMeta(): Promise<PlayerMeta[] | null> {
 }
 
 /**
- * A lookup from `playerMetaKey` → { team, byeWeek }. Serves the cache when it
- * is fresh, otherwise refreshes from Yahoo (falling back to a stale cache if the
- * refresh fails). Returns null when no metadata is available at all.
+ * A `players` lookup (`playerMetaKey` → metadata) plus a `teamBye` lookup
+ * (canonical team abbr → bye week). Serves the cache when it is fresh, otherwise
+ * refreshes from Yahoo (falling back to a stale cache if the refresh fails).
+ * Returns null when no metadata is available at all.
  */
-export async function getPlayerMetaIndex(): Promise<Map<
-  string,
-  PlayerMetaHit
-> | null> {
+export async function getPlayerMetaIndex(): Promise<PlayerMetaIndex | null> {
   const cached = await readCached();
   const fresh =
     cached && Date.now() - cached.fetchedAt.getTime() < MAX_AGE_MS
@@ -145,14 +153,19 @@ export async function getPlayerMetaIndex(): Promise<Map<
       : (await refreshYahooPlayerMeta()) ?? cached?.records ?? null;
   if (!fresh) return null;
 
-  const index = new Map<string, PlayerMetaHit>();
+  const players = new Map<string, PlayerMetaHit>();
+  const teamBye = new Map<string, number>();
   for (const record of fresh) {
     if (!record.name) continue;
+    if (record.byeWeek !== undefined && record.team) {
+      const abbr = normalizeTeam(record.team) ?? record.team.toUpperCase();
+      if (!teamBye.has(abbr)) teamBye.set(abbr, record.byeWeek);
+    }
     const key = playerMetaKey(record.name, record.position);
-    const existing = index.get(key);
+    const existing = players.get(key);
     // Prefer an entry that actually carries a bye week.
     if (!existing || (existing.byeWeek === undefined && record.byeWeek !== undefined)) {
-      index.set(key, {
+      players.set(key, {
         team: record.team,
         teamFull: record.teamFull,
         byeWeek: record.byeWeek,
@@ -163,5 +176,5 @@ export async function getPlayerMetaIndex(): Promise<Map<
       });
     }
   }
-  return index;
+  return { players, teamBye };
 }

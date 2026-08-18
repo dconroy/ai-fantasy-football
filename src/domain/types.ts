@@ -100,3 +100,56 @@ export interface RecommendationResult {
   readonly currentRound: number;
   readonly picksUntilFollowingSelection: number | null;
 }
+
+export type WaiverFactor =
+  | "chenValue"
+  | "starterUpgrade"
+  | "positionalNeed"
+  | "hiddenGem"
+  | "contested"
+  | "trending"
+  | "watchlisted";
+
+export interface WaiverFactorBreakdown {
+  readonly factor: WaiverFactor;
+  /** A normalized signal; positive helps and negative hurts. */
+  readonly value: number;
+  readonly weight: number;
+  readonly contribution: number;
+  readonly explanation: string;
+}
+
+/** A lightweight reference to a rostered player (upgrade-over / drop target). */
+export interface WaiverPlayerRef {
+  readonly id: string;
+  readonly name: string;
+  readonly position: string;
+  readonly team: string;
+  readonly chenRank?: number;
+  readonly chenTier?: number;
+}
+
+export interface WaiverTarget {
+  readonly player: {
+    readonly id: string;
+    readonly name: string;
+    readonly position: string;
+    readonly team: string;
+    readonly status?: string;
+    readonly byeWeek?: number;
+    readonly percentOwned?: number;
+    readonly chenRank?: number;
+    readonly chenTier?: number;
+  };
+  readonly score: number;
+  readonly factors: readonly WaiverFactorBreakdown[];
+  readonly reasons: readonly string[];
+  /** The current starter this pickup would beat out, if any. */
+  readonly upgradeOver: WaiverPlayerRef | null;
+  /** The most expendable roster player to drop to make room, if a move is worth it. */
+  readonly suggestedDrop: WaiverPlayerRef | null;
+  readonly fillsNeed: boolean;
+  readonly isContested: boolean;
+  readonly isTrending: boolean;
+  readonly isWatched: boolean;
+}

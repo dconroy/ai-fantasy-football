@@ -18,8 +18,14 @@ import {
   getPlayerMetaIndex,
   playerMetaKey,
 } from "@/adapters/yahoo/player-meta";
+import { normalizeTeam } from "@/domain/identity";
 import type { User } from "@prisma/client";
 import type { Position } from "@/domain";
+
+/** Sleeper hosts free, no-auth team logos keyed by lowercase abbreviation. */
+function sleeperTeamLogo(abbr: string): string {
+  return `https://sleepercdn.com/images/team_logos/nfl/${abbr.toLowerCase()}.png`;
+}
 
 export const LEAGUE_DRAFT_ID = "full-contact-2026";
 
@@ -198,20 +204,54 @@ export async function ensureBoardByes(): Promise<void> {
 
     let changed = false;
     const players = current.players.map((player) => {
-      const hit = index.get(playerMetaKey(player.name, player.position));
-      if (!hit) return player;
+      // Defenses never match Yahoo by name (Chen lists "Philadelphia Eagles",
+      // Yahoo lists the city), so resolve them by team abbreviation instead:
+      // Sleeper's free team logo for the photo and the shared team bye we
+      // derived from every rostered player's bye week.
+      if (player.position === "DEF") {
+        const abbr =
+          normalizeTeam(player.name) ??
+          (player.team && player.team !== "FA"
+            ? normalizeTeam(player.team)
+            : null);
+        if (!abbr) return player;
+        const next: Player = {
+          ...player,
+          team: player.team && player.team !== "FA" ? player.team : abbr,
+          teamName: player.teamName ?? player.name,
+          byeWeek: player.byeWeek ?? index.teamBye.get(abbr),
+          imageUrl: player.imageUrl ?? sleeperTeamLogo(abbr),
+        };
+        if (
+          next.team === player.team &&
+          next.byeWeek === player.byeWeek &&
+          next.imageUrl === player.imageUrl &&
+          next.teamName === player.teamName
+        ) {
+          return player;
+        }
+        changed = true;
+        return next;
+      }
+
+      const hit = index.players.get(playerMetaKey(player.name, player.position));
+      // Even without a name match, a known team still resolves the bye week.
+      const teamAbbr =
+        player.team && player.team !== "FA" ? normalizeTeam(player.team) : null;
+      const teamBye = teamAbbr ? index.teamBye.get(teamAbbr) : undefined;
+      if (!hit && teamBye === undefined) return player;
       const next: Player = {
         ...player,
         team:
           player.team && player.team !== "FA"
             ? player.team
-            : hit.team || player.team,
-        teamName: player.teamName ?? hit.teamFull,
-        byeWeek: player.byeWeek ?? hit.byeWeek,
-        imageUrl: player.imageUrl ?? hit.imageUrl,
-        percentOwned: player.percentOwned ?? hit.percentOwned,
-        playerKey: player.playerKey ?? hit.playerKey,
-        injuryStatus: player.injuryStatus ?? mapInjuryStatus(hit.status),
+            : hit?.team || player.team,
+        teamName: player.teamName ?? hit?.teamFull,
+        byeWeek: player.byeWeek ?? hit?.byeWeek ?? teamBye,
+        imageUrl: player.imageUrl ?? hit?.imageUrl,
+        percentOwned: player.percentOwned ?? hit?.percentOwned,
+        playerKey: player.playerKey ?? hit?.playerKey,
+        injuryStatus: player.injuryStatus ?? mapInjuryStatus(hit?.status),
       };
       if (
         next.team === player.team &&
@@ -384,6 +424,7 @@ export function userPrefs(user: User): {
   teamName: string;
   pins: string[];
   avoids: string[];
+  waiverWatch: string[];
   weights: StrategyWeights;
   darkMode: boolean;
 } {
@@ -395,6 +436,7 @@ export function userPrefs(user: User): {
     teamName: user.teamName?.trim() || (user.role === "admin" ? "Cobra Kai" : user.displayName),
     pins: parseJson<string[]>(user.pinsJson, []),
     avoids: parseJson<string[]>(user.avoidsJson, []),
+    waiverWatch: parseJson<string[]>(user.waiverWatchJson, []),
     weights,
     darkMode: user.darkMode,
   };

@@ -1,0 +1,1 @@
+ALTER TABLE "User" ADD COLUMN "waiverWatchJson" TEXT NOT NULL DEFAULT '[]';

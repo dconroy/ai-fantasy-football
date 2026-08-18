@@ -61,8 +61,29 @@ interface WeeklyData {
       destinationTeamName?: string;
     }>;
   }>;
-  waivers: Array<{
-    playerKey: string;
+  waivers: WaiverTargetDto[];
+  hotAdds: Array<{
+    name: string;
+    position?: string;
+    team?: string;
+    destinationTeamName?: string;
+  }>;
+  chen: { importedAt: string; source: string };
+  syncedAt: string;
+}
+
+interface WaiverPlayerRefDto {
+  id: string;
+  name: string;
+  position: string;
+  team: string;
+  chenRank?: number;
+  chenTier?: number;
+}
+
+interface WaiverTargetDto {
+  player: {
+    id: string;
     name: string;
     position: string;
     team: string;
@@ -71,9 +92,15 @@ interface WeeklyData {
     percentOwned?: number;
     chenRank?: number;
     chenTier?: number;
-  }>;
-  chen: { importedAt: string; source: string };
-  syncedAt: string;
+  };
+  score: number;
+  reasons: string[];
+  upgradeOver: WaiverPlayerRefDto | null;
+  suggestedDrop: WaiverPlayerRefDto | null;
+  fillsNeed: boolean;
+  isContested: boolean;
+  isTrending: boolean;
+  isWatched: boolean;
 }
 
 interface LeagueOption {
@@ -109,6 +136,8 @@ export function WeeklyHq() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [leagues, setLeagues] = useState<LeagueOption[] | null>(null);
   const [leaguesError, setLeaguesError] = useState<string | null>(null);
+  const [watch, setWatch] = useState<string[]>([]);
+  const [posFilter, setPosFilter] = useState<string>("ALL");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,14 +169,36 @@ export function WeeklyHq() {
     void load();
     fetch("/api/me")
       .then((response) => (response.ok ? response.json() : null))
-      .then((me: { darkMode?: boolean; role?: string } | null) => {
-        if (me) {
-          setDark(me.darkMode === true);
-          setIsAdmin(me.role === "admin");
-        }
-      })
+      .then(
+        (
+          me: { darkMode?: boolean; role?: string; waiverWatch?: string[] } | null,
+        ) => {
+          if (me) {
+            setDark(me.darkMode === true);
+            setIsAdmin(me.role === "admin");
+            if (Array.isArray(me.waiverWatch)) setWatch(me.waiverWatch);
+          }
+        },
+      )
       .catch(() => undefined);
   }, [load]);
+
+  const toggleWatch = useCallback(
+    async (playerId: string) => {
+      const next = watch.includes(playerId)
+        ? watch.filter((id) => id !== playerId)
+        : [...watch, playerId];
+      setWatch(next);
+      await fetch("/api/me", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ waiverWatch: next }),
+      }).catch(() => undefined);
+      // Re-rank so watched players pin to the top with a fresh watchlist boost.
+      void load();
+    },
+    [watch, load],
+  );
 
   useEffect(() => {
     if (error?.code !== "no-league" || leagues !== null) return;
@@ -181,6 +232,9 @@ export function WeeklyHq() {
   );
   const opponent = data?.matchup?.teams.find(
     (team) => team.teamKey !== data.team.teamKey,
+  );
+  const filteredWaivers = (data?.waivers ?? []).filter(
+    (target) => posFilter === "ALL" || target.player.position === posFilter,
   );
 
   return (
@@ -429,41 +483,112 @@ export function WeeklyHq() {
             <section className="panel">
               <div className="panel-heading">
                 <div>
-                  <p className="eyebrow">Free agents by Yahoo rank</p>
-                  <h2>Waiver targets</h2>
+                  <p className="eyebrow">Ranked for your roster · advisory only</p>
+                  <h2>Waiver Wire Sniper</h2>
                 </div>
-                <span>advisory only</span>
+                <span>{filteredWaivers.length} targets</span>
               </div>
+
+              {data.hotAdds.length > 0 && (
+                <div className="sniper-hotadds">
+                  <span className="sniper-hotadds-label">🔥 Hot adds</span>
+                  {data.hotAdds.map((add) => (
+                    <span className="sniper-hotadd" key={add.name}>
+                      {add.name}
+                      {add.position ? ` (${add.position})` : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="sniper-filters">
+                {["ALL", "QB", "RB", "WR", "TE", "K", "DEF"].map((pos) => (
+                  <button
+                    key={pos}
+                    className={`sniper-filter ${posFilter === pos ? "active" : ""}`}
+                    onClick={() => setPosFilter(pos)}
+                  >
+                    {pos === "ALL" ? "All" : pos}
+                  </button>
+                ))}
+              </div>
+
               <div className="weekly-waivers">
-                {data.waivers.map((agent) => (
-                  <div className="weekly-roster-row" key={agent.playerKey}>
-                    <span className="weekly-slot-label">{agent.position}</span>
-                    <span className="weekly-roster-name">
-                      <strong>{agent.name}</strong>
-                      <small>
-                        {agent.team} · Bye {agent.byeWeek ?? "—"}
-                        {agent.percentOwned !== undefined
-                          ? ` · ${agent.percentOwned}% owned`
-                          : ""}
-                      </small>
-                    </span>
-                    <span>
-                      {agent.chenTier ? (
-                        <i className={`tier tier-${Math.min(agent.chenTier, 8)}`}>
-                          T{agent.chenTier}
-                        </i>
-                      ) : (
-                        "—"
+                {filteredWaivers.map((target) => (
+                  <div
+                    className={`sniper-target ${target.isWatched ? "watched" : ""}`}
+                    key={target.player.id}
+                  >
+                    <button
+                      className={`sniper-star ${target.isWatched ? "on" : ""}`}
+                      onClick={() => void toggleWatch(target.player.id)}
+                      title={
+                        target.isWatched
+                          ? "Remove from watchlist"
+                          : "Add to watchlist"
+                      }
+                      aria-label="Toggle watchlist"
+                    >
+                      {target.isWatched ? "★" : "☆"}
+                    </button>
+                    <div className="sniper-main">
+                      <div className="sniper-headline">
+                        <strong>{target.player.name}</strong>
+                        <small>
+                          {target.player.position} · {target.player.team}
+                          {target.player.byeWeek
+                            ? ` · Bye ${target.player.byeWeek}`
+                            : ""}
+                          {target.player.percentOwned !== undefined
+                            ? ` · ${target.player.percentOwned}% owned`
+                            : ""}
+                        </small>
+                      </div>
+                      <div className="sniper-badges">
+                        {target.player.chenTier ? (
+                          <i
+                            className={`tier tier-${Math.min(target.player.chenTier, 8)}`}
+                          >
+                            T{target.player.chenTier}
+                          </i>
+                        ) : null}
+                        {target.fillsNeed && (
+                          <b className="sniper-badge need">NEED</b>
+                        )}
+                        {target.isTrending && (
+                          <b className="sniper-badge trending">TRENDING</b>
+                        )}
+                        {target.isContested && (
+                          <b className="sniper-badge contested">CONTESTED</b>
+                        )}
+                        {target.player.status && (
+                          <b className={badgeClass(target.player.status)}>
+                            {target.player.status}
+                          </b>
+                        )}
+                      </div>
+                      {target.reasons.length > 0 && (
+                        <p className="sniper-reason">{target.reasons[0]}</p>
                       )}
-                    </span>
-                    <span>
-                      {agent.status && (
-                        <b className={badgeClass(agent.status)}>{agent.status}</b>
+                      {(target.upgradeOver || target.suggestedDrop) && (
+                        <p className="sniper-move">
+                          {target.upgradeOver ? (
+                            <>
+                              Beats <strong>{target.upgradeOver.name}</strong>
+                            </>
+                          ) : null}
+                          {target.upgradeOver && target.suggestedDrop ? " · " : null}
+                          {target.suggestedDrop ? (
+                            <>
+                              Drop <strong>{target.suggestedDrop.name}</strong>
+                            </>
+                          ) : null}
+                        </p>
                       )}
-                    </span>
+                    </div>
                   </div>
                 ))}
-                {data.waivers.length === 0 && (
+                {filteredWaivers.length === 0 && (
                   <p className="weekly-footnote">No free agent data available.</p>
                 )}
               </div>

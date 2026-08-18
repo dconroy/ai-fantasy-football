@@ -7,14 +7,16 @@ import {
   fetchChenPprImport,
   readCachedChenImport,
 } from "@/adapters/chen/server-cache";
-import { getOrCreateLeagueDraft } from "@/persistence/league-draft";
+import { getOrCreateLeagueDraft, userPrefs } from "@/persistence/league-draft";
 import {
   lineupSlotsFromYahoo,
   optimizeLineup,
+  rankWaiverTargets,
   resolvePlayerIdentity,
   type LineupPlayer,
   type Player,
   type Position,
+  type WaiverCandidate,
 } from "@/domain";
 
 export const runtime = "nodejs";
@@ -82,10 +84,19 @@ function toLineupPlayer(
   };
 }
 
-function enrichFreeAgent(agent: YahooFreeAgent, pool: readonly Player[]) {
+function toWaiverCandidate(
+  agent: YahooFreeAgent,
+  pool: readonly Player[],
+): WaiverCandidate {
   const chen = chenMatch(agent.name, agent.team, pool);
   return {
-    ...agent,
+    id: agent.playerKey,
+    name: agent.name,
+    position: agent.position,
+    team: agent.team,
+    status: agent.status,
+    byeWeek: agent.byeWeek,
+    percentOwned: agent.percentOwned,
     chenRank: chen?.chenRank,
     chenTier: chen?.chenTier,
   };
@@ -130,18 +141,55 @@ export async function GET(request: Request) {
         api.getRoster(myTeam.teamKey),
         api.getStandings(leagueKey).catch(() => []),
         api.getScoreboard(leagueKey).catch(() => []),
-        api.getTransactions(leagueKey, 15).catch(() => []),
-        api.getFreeAgents(leagueKey, { count: 25 }).catch(() => []),
+        api.getTransactions(leagueKey, 25).catch(() => []),
+        api.getFreeAgents(leagueKey, { count: 50 }).catch(() => []),
       ]);
 
     const lineupPlayers = roster.map((player) =>
       toLineupPlayer(player, chen.players),
     );
+    const slots = lineupSlotsFromYahoo(meta.rosterSlots);
     const lineup = optimizeLineup({
       players: lineupPlayers,
-      slots: lineupSlotsFromYahoo(meta.rosterSlots),
+      slots,
       currentWeek: meta.currentWeek,
     });
+
+    // Players being added across the league right now — the competition.
+    const addedPlayers = transactions.flatMap((transaction) =>
+      transaction.players.filter((player) => player.moveType === "add"),
+    );
+    const hotAddNames = addedPlayers.map((player) => player.name);
+    const hotAdds: Array<{
+      name: string;
+      position?: string;
+      team?: string;
+      destinationTeamName?: string;
+    }> = [];
+    const seenHotAdds = new Set<string>();
+    for (const player of addedPlayers) {
+      if (seenHotAdds.has(player.name)) continue;
+      seenHotAdds.add(player.name);
+      hotAdds.push({
+        name: player.name,
+        position: player.position,
+        team: player.team,
+        destinationTeamName: player.destinationTeamName,
+      });
+      if (hotAdds.length >= 8) break;
+    }
+
+    const waiverTargets = rankWaiverTargets({
+      freeAgents: freeAgents.map((agent) =>
+        toWaiverCandidate(agent, chen.players),
+      ),
+      roster: lineupPlayers,
+      slots,
+      currentWeek: meta.currentWeek,
+      hotAddNames,
+      watchlist: userPrefs(user).waiverWatch,
+    });
+
     const matchup =
       scoreboard.find((entry) =>
         entry.teams.some((team) => team.teamKey === myTeam.teamKey),
@@ -155,7 +203,8 @@ export async function GET(request: Request) {
       matchup,
       standings,
       transactions,
-      waivers: freeAgents.map((agent) => enrichFreeAgent(agent, chen.players)),
+      waivers: waiverTargets,
+      hotAdds,
       chen: { importedAt: chen.importedAt, source: chen.source },
       syncedAt: new Date().toISOString(),
     });

@@ -89,6 +89,7 @@ model User {
   teamName              String?
   pinsJson              String   @default("[]")
   avoidsJson            String   @default("[]")
+  waiverWatchJson       String   @default("[]")
   weightsJson           String?
   darkMode              Boolean  @default(false)
   lastSeenAt            DateTime?

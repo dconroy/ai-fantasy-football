@@ -17,6 +17,8 @@ const nextConfig: NextConfig = {
       },
       // Yahoo player headshots are served from the *.yimg.com CDN.
       { protocol: "https", hostname: "**.yimg.com" },
+      // Sleeper hosts free team logos (used for defense "headshots").
+      { protocol: "https", hostname: "sleepercdn.com" },
     ],
   },
 };

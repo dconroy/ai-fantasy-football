@@ -145,33 +145,6 @@ function hydrate(): PersistedUiState {
   }
 }
 
-function toCsv(state: PersistedUiState) {
-  const lines = ["overall,round,draft_slot,my_pick,player,position,team,roster_slot"];
-  for (const pick of state.draft.picks) {
-    lines.push(
-      [
-        pick.overall,
-        pick.round,
-        pick.slot,
-        pick.slot === state.draft.userSlot,
-        `"${pick.player.name.replaceAll('"', '""')}"`,
-        pick.player.position,
-        pick.player.team,
-        pick.rosterSlot,
-      ].join(","),
-    );
-  }
-  return lines.join("\n");
-}
-
-function download(filename: string, body: string, type: string) {
-  const anchor = document.createElement("a");
-  anchor.href = URL.createObjectURL(new Blob([body], { type }));
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(anchor.href);
-}
-
 function scoreComparison(
   first: ReturnType<typeof recommendPlayers>["recommendations"][number],
   alternative: ReturnType<typeof recommendPlayers>["recommendations"][number],
@@ -1518,15 +1491,6 @@ export function DraftAssistant() {
               </div>
             </section>
           )}
-
-          <section className="panel exports">
-            <button className="secondary" onClick={() => download("draft-results.json", JSON.stringify(state.draft, null, 2), "application/json")}>
-              Export JSON
-            </button>
-            <button className="secondary" onClick={() => download("draft-results.csv", toCsv(state), "text/csv")}>
-              Export CSV
-            </button>
-          </section>
         </aside>
       </section>
 

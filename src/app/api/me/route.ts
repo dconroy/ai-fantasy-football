@@ -50,6 +50,7 @@ export async function PUT(request: Request) {
       teamName?: string;
       pins?: string[];
       avoids?: string[];
+      waiverWatch?: string[];
       weights?: Partial<StrategyWeights>;
       darkMode?: boolean;
       displayName?: string;
@@ -71,6 +72,9 @@ export async function PUT(request: Request) {
         displayName: body?.displayName?.trim() || user.displayName,
         pinsJson: Array.isArray(body?.pins) ? JSON.stringify(body.pins) : undefined,
         avoidsJson: Array.isArray(body?.avoids) ? JSON.stringify(body.avoids) : undefined,
+        waiverWatchJson: Array.isArray(body?.waiverWatch)
+          ? JSON.stringify(body.waiverWatch)
+          : undefined,
         weightsJson: weights ? JSON.stringify(weights) : undefined,
         darkMode: typeof body?.darkMode === "boolean" ? body.darkMode : undefined,
       },

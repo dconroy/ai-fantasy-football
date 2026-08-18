@@ -1213,6 +1213,144 @@ h2 {
   color: var(--saffron);
 }
 
+.sniper-hotadds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+
+.sniper-hotadds-label {
+  font-weight: 900;
+  color: var(--saffron);
+  white-space: nowrap;
+}
+
+.sniper-hotadd {
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: color-mix(in srgb, var(--saffron) 12%, var(--panel));
+  color: var(--saffron);
+  white-space: nowrap;
+}
+
+.sniper-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 13px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sniper-filter {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 11px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sniper-filter.active {
+  border-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.sniper-target {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: start;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding: 9px 13px;
+}
+
+.sniper-target.watched {
+  background: color-mix(in srgb, var(--saffron) 7%, var(--panel));
+}
+
+.sniper-star {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  padding: 0;
+}
+
+.sniper-star.on {
+  color: var(--saffron);
+}
+
+.sniper-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sniper-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.sniper-headline strong {
+  font-size: 13px;
+}
+
+.sniper-headline small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.sniper-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.sniper-badge {
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.sniper-badge.need {
+  background: color-mix(in srgb, var(--green) 14%, var(--panel));
+  color: var(--green);
+}
+
+.sniper-badge.trending {
+  background: color-mix(in srgb, var(--saffron) 16%, var(--panel));
+  color: var(--saffron);
+}
+
+.sniper-badge.contested {
+  background: color-mix(in srgb, var(--red) 12%, var(--panel));
+  color: var(--red);
+}
+
+.sniper-reason {
+  font-size: 11px;
+  color: var(--text);
+}
+
+.sniper-move {
+  font-size: 10px;
+  color: var(--muted);
+}
+
 .weekly-matchup {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
