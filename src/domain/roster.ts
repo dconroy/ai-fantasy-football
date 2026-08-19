@@ -33,6 +33,12 @@ export interface AssignmentOptions {
   readonly limits?: RosterSlotLimits;
   /** IR is only used for players explicitly marked IR. */
   readonly allowIr?: boolean;
+  /**
+   * When the constructed roster is already full, still park the player on
+   * BENCH. Draft recording needs this: robots can stack 7 WRs / 3 QBs, which
+   * overflows the 1+2+2+1+1+1+1+6 shape before round 15.
+   */
+  readonly overflowBench?: boolean;
 }
 
 export function assignRosterSlot(
@@ -55,6 +61,7 @@ export function assignRosterSlot(
   if (counts[directSlot] < limits[directSlot]) return directSlot;
   if (FLEX_POSITIONS.includes(player.position) && counts.FLEX < limits.FLEX) return "FLEX";
   if (counts.BENCH < limits.BENCH) return "BENCH";
+  if (options.overflowBench) return "BENCH";
   return null;
 }
 

@@ -44,7 +44,10 @@ export function makeManualPick(
   const teamRoster = rosterPicks(state.picks, selection.slot);
   const rosterSlot =
     options.rosterSlot ??
-    assignRosterSlot(player, teamRoster, { allowIr: options.allowIr });
+    assignRosterSlot(player, teamRoster, {
+      allowIr: options.allowIr,
+      overflowBench: true,
+    });
   if (!rosterSlot) throw new Error(`Roster for slot ${selection.slot} is full`);
 
   const pick: Pick = {

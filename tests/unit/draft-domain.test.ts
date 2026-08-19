@@ -105,6 +105,18 @@ describe("roster assignment", () => {
       picks.push(pick(10 + index, "BENCH", player(`1${index}`, "WR")));
     }
     expect(assignRosterSlot(player("20", "WR"), picks)).toBeNull();
+    expect(
+      assignRosterSlot(player("20", "WR"), picks, { overflowBench: true }),
+    ).toBe("BENCH");
+  });
+
+  it("records a 15-round team even when BPA stacks one position", () => {
+    let state = createDraftState(1, { teamCount: 1, rounds: 15 });
+    for (let index = 1; index <= 15; index += 1) {
+      state = makeManualPick(state, player(String(index), "WR"));
+    }
+    expect(state.picks).toHaveLength(15);
+    expect(state.picks.filter((entry) => entry.rosterSlot === "BENCH").length).toBe(12);
   });
 
   it("uses IR only for an IR-eligible player and keeps it outside active capacity", () => {
