@@ -1015,6 +1015,27 @@ export function DraftAssistant({
     }
   }
 
+  async function restartDemo() {
+    if (!confirmClearBoard()) return;
+    setNotice("Restarting the mock…");
+    try {
+      const response = await fetch("/api/demo/restart", { method: "POST" });
+      const payload = (await response.json()) as DraftPayload & {
+        error?: string;
+        demo?: { role: "watch" | "play"; slot: number | null; roomId: string; takenSlots?: number[] };
+      };
+      if (!response.ok || !payload.draft) {
+        setNotice(payload.error ?? "Couldn't restart the mock.");
+        return;
+      }
+      setDemoIdle(false);
+      setSelected(null);
+      applyPayload(payload, "Mock restarted — fresh board, same seat.");
+    } catch {
+      setNotice("Couldn't restart the mock.");
+    }
+  }
+
   async function joinDemo(seat?: number | null) {
     const requested = seat ?? chosenSeat ?? null;
     const response = await fetch("/api/demo/join", {
@@ -1107,11 +1128,16 @@ export function DraftAssistant({
   // Any active member may restart a mock (the board is shared and the server
   // only requires an active session). It stays hidden on the live board via
   // `mockActive`, so nobody can wipe a real draft night mid-pick.
-  const restartMockButton = mockActive ? (
+  const canRestartMock = mockActive && (!isDemo || demoRole === "play");
+  const restartMockButton = canRestartMock ? (
     <button
       className="secondary"
       onClick={() =>
-        void (practiceMockActive ? startMockHarness() : startSession("mock"))
+        void (isDemo
+          ? restartDemo()
+          : practiceMockActive
+            ? startMockHarness()
+            : startSession("mock"))
       }
       title="Clear the shared board and run this mock again from scratch"
     >

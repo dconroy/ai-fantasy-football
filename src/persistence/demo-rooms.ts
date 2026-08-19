@@ -311,3 +311,58 @@ export async function claimDemoSeat(
   await saveSeatSeen(roomId, { ...seen, [slot]: new Date().toISOString() });
   return { shared, slot, config: started };
 }
+
+/**
+ * Wipe a demo room back to a fresh mock and re-arm the clock. The shared board
+ * (this is the "anyone can restart a mock" affordance) so every currently-active
+ * seat is preserved as a human slot; robots refill the rest. Picks are cleared
+ * and a new variety seed is rolled so the board doesn't replay identically.
+ */
+export async function restartDemoRoom(
+  roomId: string,
+  callerSlot: number | null,
+): Promise<{ shared: SharedDraft; slot: number | null; config: MockDraftConfig }> {
+  const shared = await getOrCreateLeagueDraft(roomId);
+  if (!shared.leagueKey) throw new Error("Demo room is missing a mock key");
+  const leagueKey = shared.leagueKey;
+  const existing = await loadMockConfig(leagueKey);
+  const seen = await loadSeatSeen(roomId);
+  const active = existing
+    ? activeSeatSet(existing.humanSlots, seen)
+    : new Set<number>();
+  if (callerSlot) active.add(callerSlot);
+  const humanSlots = [...active].sort((a, b) => a - b);
+  const players: MockPlayerSeed[] = shared.players.map((player) => ({
+    id: player.id,
+    name: player.name,
+    position: player.position,
+    team: player.team,
+    chenRank: player.chenRank,
+    adp: player.adp,
+  }));
+  let config: MockDraftConfig = {
+    leagueKey,
+    teamCount: shared.teamCount,
+    rounds: shared.rounds,
+    intervalMs: existing?.intervalMs ?? 3000,
+    startedAtIso: "",
+    humanSlots,
+    picksBySlot: {},
+    autoPickMs: existing?.autoPickMs ?? 20000,
+    varietySeed: randomUUID(),
+    players,
+  };
+  if (humanSlots.length) config = startMockClock(config);
+  await saveMockConfig(config);
+  const next = await saveSharedDraft({
+    draftId: roomId,
+    mode: "live",
+    leagueKey,
+    picks: [],
+  });
+  const now = new Date().toISOString();
+  const freshSeen: Record<number, string> = {};
+  for (const slot of humanSlots) freshSeen[slot] = now;
+  await saveSeatSeen(roomId, freshSeen);
+  return { shared: next, slot: callerSlot, config };
+}
