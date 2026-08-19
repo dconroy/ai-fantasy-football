@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { LiveRooms } from "./live-rooms";
@@ -8,11 +9,11 @@ export const metadata: Metadata = {
 };
 
 const topFive = [
-  { rank: 1, name: "Bijan Robinson", pos: "RB", team: "ATL", tier: "Tier 1", note: "Best available at your seat", move: "up" },
-  { rank: 2, name: "Ja'Marr Chase", pos: "WR", team: "CIN", tier: "Tier 1", note: "Tier cliff — grab now", move: "up" },
-  { rank: 3, name: "Breece Hall", pos: "RB", team: "NYJ", tier: "Tier 2", note: "Scarcity into the turn", move: "same" },
-  { rank: 4, name: "Puka Nacua", pos: "WR", team: "LAR", tier: "Tier 2", note: "ADP vs the clock", move: "down" },
-  { rank: 5, name: "Sam LaPorta", pos: "TE", team: "DET", tier: "Tier 2", note: "Roster balance", move: "up" },
+  { rank: 1, name: "Bijan Robinson", pos: "RB", team: "ATL", tier: "Tier 1", note: "Best available at your seat", move: "up", imageUrl: "https://sleepercdn.com/content/nfl/players/9509.jpg" },
+  { rank: 2, name: "Ja'Marr Chase", pos: "WR", team: "CIN", tier: "Tier 1", note: "Tier cliff — grab now", move: "up", imageUrl: "https://sleepercdn.com/content/nfl/players/7564.jpg" },
+  { rank: 3, name: "Breece Hall", pos: "RB", team: "NYJ", tier: "Tier 2", note: "Scarcity into the turn", move: "same", imageUrl: "https://sleepercdn.com/content/nfl/players/8155.jpg" },
+  { rank: 4, name: "Puka Nacua", pos: "WR", team: "LAR", tier: "Tier 2", note: "ADP vs the clock", move: "down", imageUrl: "https://sleepercdn.com/content/nfl/players/9493.jpg" },
+  { rank: 5, name: "Sam LaPorta", pos: "TE", team: "DET", tier: "Tier 2", note: "Roster balance", move: "up", imageUrl: "https://sleepercdn.com/content/nfl/players/10859.jpg" },
 ] as const;
 
 const modes = [
@@ -90,6 +91,14 @@ export default function LandingPage() {
               {topFive.map((p) => (
                 <li key={p.rank} className={`landing-pick move-${p.move}`}>
                   <span className="landing-rank">{p.rank}</span>
+                  <Image
+                    className="landing-player-photo"
+                    src={p.imageUrl}
+                    alt=""
+                    width={38}
+                    height={38}
+                    unoptimized
+                  />
                   <span className="landing-pick-main">
                     <span className="landing-pick-name">{p.name}</span>
                     <span className="landing-pick-note">{p.note}</span>

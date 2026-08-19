@@ -216,10 +216,26 @@ export async function ensureBoardByes(draftId = LEAGUE_DRAFT_ID): Promise<void> 
       player.imageUrl === undefined ||
       !player.team ||
       player.team === "FA";
-    const needsEnrichment =
-      current.players.some(needsPlayerEnrichment) ||
-      current.picks.some((pick) => needsPlayerEnrichment(pick.player));
-    if (!needsEnrichment) return;
+    const playersNeedEnrichment = current.players.some(needsPlayerEnrichment);
+    const picksNeedEnrichment = current.picks.some((pick) =>
+      needsPlayerEnrichment(pick.player),
+    );
+    if (!playersNeedEnrichment && !picksNeedEnrichment) return;
+
+    // Picks persist a player snapshot. If the master pool was enriched after a
+    // pick was recorded, repair that snapshot immediately without depending on
+    // another external metadata fetch.
+    if (!playersNeedEnrichment && picksNeedEnrichment) {
+      const currentById = new Map(
+        current.players.map((player) => [player.id, player]),
+      );
+      const picks = current.picks.map((pick) => {
+        const enriched = currentById.get(pick.player.id);
+        return enriched ? { ...pick, player: enriched } : pick;
+      });
+      await saveSharedDraft({ draftId, picks });
+      return;
+    }
 
     const sleeper = await getSleeperIndex();
     // Yahoo is a bonus (percent-owned, injuries); tolerate it being unavailable.

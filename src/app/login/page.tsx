@@ -95,27 +95,49 @@ export default function LoginPage() {
     <main className="security-screen">
       <section className={`security-console ${yahooError ? "denied" : ""}`}>
         <p className="security-kicker">dojo.football</p>
-        <h1>Draft Dojo</h1>
+        <h1>Choose how you draft</h1>
         <p className="security-message">
           {yahooError ??
-            "Recalculates your top five after every pick. Connect a league or try the demo."}
+            "Connect your league for a synced board, or jump into a public mock without an account."}
         </p>
-        <a className="yahoo-login" href="/api/yahoo/auth">
-          Continue with Yahoo
-        </a>
-        <form onSubmit={lookupSleeper}>
-          <label htmlFor="sleeper-username">Sleeper username</label>
-          <input
-            id="sleeper-username"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            placeholder="your_sleeper_name"
-            autoComplete="username"
-          />
-          <button disabled={loading || !username.trim()}>
-            {loading ? "Looking up…" : "Connect Sleeper"}
-          </button>
-        </form>
+        <div className="connect-choices">
+          <article className="connect-choice yahoo-choice">
+            <p className="security-kicker">Yahoo Fantasy</p>
+            <h2>Connect Yahoo</h2>
+            <p>Sign in securely and select the league whose draft you want to follow.</p>
+            <a className="yahoo-login" href="/api/yahoo/auth">
+              Continue with Yahoo
+            </a>
+          </article>
+
+          <article className="connect-choice sleeper-choice">
+            <p className="security-kicker">Sleeper</p>
+            <h2>Connect Sleeper</h2>
+            <p>Enter your public Sleeper username, then choose one of your drafts.</p>
+            <form onSubmit={lookupSleeper}>
+              <label htmlFor="sleeper-username">Sleeper username</label>
+              <input
+                id="sleeper-username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="your_sleeper_name"
+                autoComplete="username"
+              />
+              <button disabled={loading || !username.trim()}>
+                {loading ? "Looking up…" : "Find my drafts"}
+              </button>
+            </form>
+          </article>
+
+          <article className="connect-choice demo-choice">
+            <p className="security-kicker">No account needed</p>
+            <h2>Try the demo</h2>
+            <p>Create a custom public mock or join an open room and choose your seat.</p>
+            <Link className="demo-login" href="/demo">
+              Open draft lobby
+            </Link>
+          </article>
+        </div>
         {sleeperError ? <p className="security-message">{sleeperError}</p> : null}
         {drafts.length > 0 ? (
           <div className="sleeper-picks">
@@ -136,10 +158,7 @@ export default function LoginPage() {
         ) : sleeperUser ? (
           <p className="security-message">No 2026 drafts found for that username.</p>
         ) : null}
-        <small>
-          <Link href="/demo">Try a live demo</Link> without an account. You still make
-          the real pick in Sleeper or Yahoo.
-        </small>
+        <small>You still make the real pick in Sleeper or Yahoo.</small>
       </section>
     </main>
   );

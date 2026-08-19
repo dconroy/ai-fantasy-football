@@ -216,8 +216,8 @@ export function DemoLobby() {
         <Link className="brand-lockup" href="/">
           <Image
             className="brand-mark"
-            src="/brand/dojo-mark.svg"
-            alt=""
+            src="/dojo-mark.png"
+            alt="Draft Dojo"
             width={58}
             height={58}
             priority

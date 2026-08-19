@@ -1163,11 +1163,10 @@ export function DraftAssistant({
         <div className="brand-lockup">
           <Image
             className="brand-mark"
-            src="https://raw.githubusercontent.com/dconroy/ai-fantasy-football/main/image%20%2814%29.png"
+            src="/dojo-mark.png"
             alt="Draft Dojo"
             width={58}
             height={58}
-            unoptimized
             priority
           />
           <div className="brand-copy">
