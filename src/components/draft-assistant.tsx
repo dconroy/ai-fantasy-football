@@ -233,6 +233,7 @@ export function DraftAssistant() {
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState<Position | "ALL">("ALL");
   const [tier, setTier] = useState("ALL");
+  const [avoidFilter, setAvoidFilter] = useState<"all" | "only">("all");
   const [recoTab, setRecoTab] = useState<"top" | "insights">("top");
   const [selected, setSelected] = useState<string | null>(null);
   const [syncPaused, setSyncPaused] = useState(false);
@@ -458,6 +459,7 @@ export function DraftAssistant() {
     .filter((player) =>
       `${player.name} ${player.team}`.toLowerCase().includes(search.toLowerCase()),
     )
+    .filter((player) => avoidFilter !== "only" || avoids.includes(player.id))
     .sort((a, b) => {
       const avoidDelta =
         Number(avoids.includes(a.id)) - Number(avoids.includes(b.id));
@@ -1721,6 +1723,15 @@ export function DraftAssistant() {
             <select value={tier} onChange={(event) => setTier(event.target.value)}>
               <option value="ALL">All tiers</option>
               {tiers.map((value) => <option key={value} value={value}>Tier {value}</option>)}
+            </select>
+            <select
+              value={avoidFilter}
+              onChange={(event) => setAvoidFilter(event.target.value as "all" | "only")}
+            >
+              <option value="all">All players</option>
+              <option value="only">
+                Avoided only{avoids.length ? ` (${avoids.length})` : ""}
+              </option>
             </select>
           </div>
           <div className="player-table" role="table">
