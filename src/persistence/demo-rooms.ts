@@ -24,6 +24,7 @@ import {
 } from "@/adapters/yahoo/mock-store";
 
 export const DEMO_ROOM_PREFIX = "demo:";
+const DEMO_AUTO_PICK_MS = 30_000;
 const COMPLETE_TTL_MS = 45 * 60 * 1000;
 // A room with no mock config is a half-created/orphaned shell (e.g. recreated
 // from a stale cookie). Give creation a grace window, then recycle it.
@@ -179,7 +180,7 @@ async function createPausedRoom(): Promise<{ shared: SharedDraft; leagueKey: str
     startedAtIso: "",
     humanSlots: [],
     picksBySlot: {},
-    autoPickMs: 20000,
+    autoPickMs: DEMO_AUTO_PICK_MS,
     varietySeed: randomUUID(),
     players,
   });
@@ -406,7 +407,7 @@ export async function createDemoRoom(
     startedAtIso: "",
     humanSlots: [settings.slot],
     picksBySlot: {},
-    autoPickMs: 20000,
+    autoPickMs: DEMO_AUTO_PICK_MS,
     varietySeed: randomUUID(),
     players,
   });

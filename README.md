@@ -183,7 +183,7 @@ independent:
 open seat, or create one with Standard/Half-PPR/PPR scoring, 8–14 rosters, 10–16 rounds,
 and your preferred slot. A new room provides a unique invite link for friends; they open it
 and choose any remaining seat. Robots fill empty seats, idle humans auto-draft after about
-20 seconds, and completed rooms are recycled after ~45 minutes. “Back to lobby” leaves the
+30 seconds, and completed rooms are recycled after ~45 minutes. “Back to lobby” leaves the
 shared room intact instead of resetting everyone’s draft.
 
 ## Project layout

@@ -18,14 +18,17 @@ const topFive = [
 
 const modes = [
   {
+    number: "01",
     title: "Practice mock",
     body: "Robots fill the empty seats and the room pauses on every human pick. Draft as slow or as fast as you want.",
   },
   {
+    number: "02",
     title: "Watch a live draft",
     body: "Follow along on Sleeper or Yahoo. The board tracks every pick in real time — you still click in your app.",
   },
   {
+    number: "03",
     title: "Report card",
     body: "When the board fills, every team gets graded on a curve. Bragging rights, delivered.",
   },
@@ -50,18 +53,30 @@ export default function LandingPage() {
         </nav>
       </header>
 
+      <div className="landing-tape" aria-label="Draft Dojo capabilities">
+        <span>Live board</span>
+        <span aria-hidden="true">✦</span>
+        <span>Five picks. Recalculated.</span>
+        <span aria-hidden="true">✦</span>
+        <span>Sleeper + Yahoo</span>
+        <span aria-hidden="true">✦</span>
+        <span>No autopick. You call it.</span>
+      </div>
+
       <section className="landing-hero">
         <div className="landing-hero-copy">
           <p className="eyebrow">
             <span className="eyebrow-live" aria-hidden="true" />
-            dojo.football
+            The room is moving
           </p>
           <h1>
-            Draft like the<br />
-            room can&apos;t.
+            Read the room.<br />
+            <em>Own the turn.</em>
           </h1>
-          <p className="landing-line">Recalculates your top five after every pick.</p>
-          <p className="landing-attitude">Strike first. Draft smart.</p>
+          <p className="landing-line">
+            Five picks for your roster, rebuilt every time the board changes.
+          </p>
+          <p className="landing-attitude">No chatbot fog. Just the board, the clock, and your move.</p>
           <div className="landing-ctas">
             <Link className="landing-primary" href="/demo">
               Try a live demo
@@ -78,6 +93,10 @@ export default function LandingPage() {
         </div>
 
         <figure className="landing-shot">
+          <span className="landing-pick-stamp" aria-hidden="true">
+            <small>ON DECK</small>
+            1.07
+          </span>
           <div className="landing-board">
             <div className="landing-board-head">
               <span className="landing-clock">
@@ -120,6 +139,7 @@ export default function LandingPage() {
       <section className="landing-modes">
         {modes.map((m) => (
           <article key={m.title}>
+            <span className="landing-mode-number" aria-hidden="true">{m.number}</span>
             <h2>{m.title}</h2>
             <p>{m.body}</p>
           </article>

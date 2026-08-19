@@ -27,7 +27,7 @@ There is no password gate and nobody has to approve you.
 3. Or create a room: choose Standard/Half PPR/Full PPR, 8–14 rosters, 10–16 rounds, and your draft slot.
 4. Copy the unique invite link and send it to friends. They open the link and choose any remaining seat.
 5. Robots fill empty seats. The room **pauses on your turn** until you confirm.
-6. If you sit on the clock for about 20 seconds, the room auto-drafts best-available so it doesn’t stall.
+6. If you sit on the clock for about 30 seconds, the room auto-drafts best-available so it doesn’t stall.
 
 You can leave and come back — your browser remembers the room for a few hours. Use
 **Copy invite link** on the board at any time, or **Back to lobby** to find another draft
@@ -104,7 +104,7 @@ On your own board (or the house league if you’re the admin):
 | **Manual mock** | Nothing moves until you press *Simulate to my pick* / *Advance one*. | Solo strategy |
 | **Draft night — live** | Follows a real Yahoo league key (or a connected Sleeper draft). | The actual draft |
 
-Practice mocks pause at every claimed seat. Unclaimed seats are robots. A human who doesn’t confirm in 20 seconds gets auto-drafted so the room keeps moving. That auto-draft does **not** happen on live draft night.
+Practice mocks pause at every claimed seat. Unclaimed seats are robots. On the demo page, a human who doesn’t confirm in 30 seconds gets auto-drafted so the room keeps moving. That auto-draft does **not** happen on live draft night.
 
 ---
 

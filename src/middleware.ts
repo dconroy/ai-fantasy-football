@@ -3,6 +3,7 @@ import { SESSION_COOKIE_NAME, readSessionToken } from "@/auth/session";
 
 const PUBLIC_EXACT = new Set([
   "/",
+  "/dojo-mark.png",
   "/login",
   "/demo",
   "/api/auth/login",
