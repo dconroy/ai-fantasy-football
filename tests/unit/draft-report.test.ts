@@ -35,9 +35,10 @@ function pick(
 
 describe("draft report card", () => {
   it("maps composite scores onto letter grades", () => {
+    expect(letterGrade(0.95)).toBe("A+");
     expect(letterGrade(0.9)).toBe("A");
     expect(letterGrade(0.67)).toBe("B");
-    expect(letterGrade(0.2)).toBe("F");
+    expect(letterGrade(0.05)).toBe("F");
   });
 
   it("flags steals, reaches, and starter holes", () => {

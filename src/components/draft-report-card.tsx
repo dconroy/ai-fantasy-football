@@ -14,6 +14,7 @@ export function DraftReportCard({
   onClose: () => void;
 }) {
   const [openSlot, setOpenSlot] = useState(userSlot);
+  const mine = report.teams.find((team) => team.slot === userSlot);
 
   return (
     <div className="launcher-overlay" onClick={onClose}>
@@ -26,16 +27,41 @@ export function DraftReportCard({
       >
         <header className="launcher-head">
           <div>
-            <p className="eyebrow">Final grades</p>
+            <p className="eyebrow">
+              {report.complete ? "Final grades" : "Draft in progress"}
+            </p>
             <h2 id="report-card-title">Draft report card</h2>
           </div>
           <button className="secondary" type="button" onClick={onClose}>
             Close
           </button>
         </header>
-        <div className="report-grid">
+
+        {mine && (
+          <div className={`report-hero grade-${mine.grade[0]}`}>
+            <div className="report-hero-grade">
+              <strong>{mine.grade}</strong>
+              <small>{ordinal(mine.rank)} of {report.teams.length}</small>
+            </div>
+            <div className="report-hero-body">
+              <p className="report-hero-team">
+                {teamLabel(mine.slot)} · your team
+              </p>
+              <p className="report-hero-summary">{mine.summary}</p>
+              <ul className="report-reasons">
+                {mine.reasons.map((reason, index) => (
+                  <li key={index} className={`tone-${reason.tone}`}>
+                    {reason.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        <ol className="report-board">
           {report.teams.map((team) => (
-            <TeamCard
+            <TeamRow
               key={team.slot}
               team={team}
               label={teamLabel(team.slot)}
@@ -43,18 +69,18 @@ export function DraftReportCard({
               expanded={team.slot === openSlot}
               onToggle={() =>
                 setOpenSlot((current) =>
-                  current === team.slot ? 0 : team.slot,
+                  current === team.slot ? -1 : team.slot,
                 )
               }
             />
           ))}
-        </div>
+        </ol>
       </section>
     </div>
   );
 }
 
-function TeamCard({
+function TeamRow({
   team,
   label,
   mine,
@@ -68,55 +94,73 @@ function TeamCard({
   onToggle: () => void;
 }) {
   return (
-    <article className={`report-team grade-${team.grade[0]} ${mine ? "mine" : ""} ${expanded ? "open" : ""}`}>
-      <button type="button" className="report-team-head" onClick={onToggle}>
-        <strong className="report-grade">{team.grade}</strong>
-        <span>
+    <li className={`report-row grade-${team.grade[0]} ${mine ? "mine" : ""} ${expanded ? "open" : ""}`}>
+      <button type="button" className="report-row-head" onClick={onToggle}>
+        <span className="report-rank">{team.rank}</span>
+        <span className="report-grade">{team.grade}</span>
+        <span className="report-row-copy">
           <b>
             {label}
             {mine ? " · you" : ""}
           </b>
-          <small>Slot {team.slot} · {team.headline}</small>
+          <small>{team.summary}</small>
+        </span>
+        <span className="report-pos">
+          {PLAYER_POSITIONS.map((position) => (
+            <i
+              key={position}
+              className={team.positionCounts[position] === 0 ? "zero" : ""}
+            >
+              {team.positionCounts[position]}
+              {position}
+            </i>
+          ))}
+        </span>
+        <span className="report-chevron" aria-hidden="true">
+          {expanded ? "▾" : "▸"}
         </span>
       </button>
-      <p className="report-pos">
-        {PLAYER_POSITIONS.map((position) => (
-          <i key={position}>
-            {team.positionCounts[position]} {position}
-          </i>
-        ))}
-      </p>
-      {team.steal && (
-        <p className="report-note steal">
-          Steal · {team.steal.name} <span>{team.steal.detail}</span>
-        </p>
-      )}
-      {team.reach && (
-        <p className="report-note reach">
-          Reach · {team.reach.name} <span>{team.reach.detail}</span>
-        </p>
-      )}
-      {team.byeAlert && <p className="report-note bye">{team.byeAlert}</p>}
-      {team.holes.length > 0 && (
-        <p className="report-note hole">{team.holes.join(" · ")}</p>
-      )}
       {expanded && (
-        <ol className="report-roster">
-          {team.picks.map((pick) => (
-            <li key={`${pick.overall}-${pick.player.id}`}>
-              <em>
-                {pick.round}.{pick.slot}
-              </em>
-              <b>{pick.player.name}</b>
-              <small>
-                {pick.player.position}
-                {pick.player.chenRank ? ` · Chen ${pick.player.chenRank}` : ""}
-                {pick.player.byeWeek ? ` · Bye ${pick.player.byeWeek}` : ""}
-              </small>
-            </li>
-          ))}
-        </ol>
+        <div className="report-detail">
+          <ul className="report-reasons">
+            {team.reasons.map((reason, index) => (
+              <li key={index} className={`tone-${reason.tone}`}>
+                {reason.text}
+              </li>
+            ))}
+          </ul>
+          <ol className="report-roster">
+            {team.picks.map((pick) => (
+              <li key={`${pick.overall}-${pick.player.id}`}>
+                <em>
+                  {pick.round}.{pick.slot}
+                </em>
+                <b>{pick.player.name}</b>
+                <small>
+                  {pick.player.position}
+                  {pick.player.chenRank ? ` · Chen ${pick.player.chenRank}` : ""}
+                  {pick.player.byeWeek ? ` · Bye ${pick.player.byeWeek}` : ""}
+                </small>
+              </li>
+            ))}
+          </ol>
+        </div>
       )}
-    </article>
+    </li>
   );
+}
+
+function ordinal(value: number): string {
+  const mod100 = value % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
+  switch (value % 10) {
+    case 1:
+      return `${value}st`;
+    case 2:
+      return `${value}nd`;
+    case 3:
+      return `${value}rd`;
+    default:
+      return `${value}th`;
+  }
 }
