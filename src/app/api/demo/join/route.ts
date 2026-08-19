@@ -10,6 +10,7 @@ import { draftStateFor, getOrCreateLeagueDraft } from "@/persistence/league-draf
 import {
   claimDemoSeat,
   findOrCreateOpenDemoRoom,
+  releaseDemoSeat,
   takenSeatsFor,
 } from "@/persistence/demo-rooms";
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
@@ -54,6 +55,13 @@ export async function POST(request: NextRequest) {
     if (!roomId) {
       roomId = (await findOrCreateOpenDemoRoom()).shared.id;
     }
+    if (existing?.role === "play") {
+      await releaseDemoSeat(
+        existing.roomId,
+        existing.slot,
+        existing.sessionId,
+      );
+    }
     let claimed;
     try {
       claimed = await claimDemoSeat(roomId, requestedSlot);
@@ -78,6 +86,7 @@ export async function POST(request: NextRequest) {
       roomId: shared.id,
       slot: claimed.slot,
       role: "play",
+      sessionId: claimed.sessionId,
     });
     const response = NextResponse.json({
       ...shared,

@@ -281,6 +281,7 @@ export function DraftAssistant({
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const reportSeenKey = useRef<string | null>(null);
+  const reportAutoOpenReady = useRef(false);
   const [liveKeyDraft, setLiveKeyDraft] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [playerBrief, setPlayerBrief] = useState<{
@@ -352,22 +353,39 @@ export function DraftAssistant({
     let cancelled = false;
     let boot = isDemo ? "/api/demo" : "/api/draft";
     if (isDemo && typeof window !== "undefined") {
-      const room = new URLSearchParams(window.location.search).get("room");
-      if (room) boot = `/api/demo?room=${encodeURIComponent(room)}`;
+      const params = new URLSearchParams(window.location.search);
+      const room = params.get("room");
+      if (room) {
+        boot = `/api/demo?room=${encodeURIComponent(room)}`;
+        if (params.get("join") === "1") boot += "&join=1";
+      }
     }
     fetch(boot)
-      .then((response) => (response.ok ? response.json() : null))
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(body?.error ?? `Unable to load room (${response.status})`);
+        }
+        return body;
+      })
       .then((payload: (DraftPayload & { demo?: { role: "watch" | "play"; slot: number | null; roomId: string; takenSlots?: number[] } }) | null) => {
         if (cancelled) return;
         if (payload?.draft && payload.players && payload.me) {
           if (payload.demo) setDraftId(payload.demo.roomId);
           applyPayload(payload, isDemo ? "Demo room ready" : "Loaded shared draft board");
+        } else if (!isDemo) {
+          setState(hydrate());
+        } else {
+          setNotice("That demo room could not be loaded. Return to the lobby and try again.");
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        if (isDemo) {
+          setNotice(error instanceof Error ? error.message : "Unable to load the demo room");
         } else {
           setState(hydrate());
         }
-      })
-      .catch(() => {
-        if (!cancelled) setState(hydrate());
       })
       .finally(() => {
         if (!cancelled) setReady(true);
@@ -396,12 +414,36 @@ export function DraftAssistant({
       : "/api/draft";
     const timer = window.setInterval(() => {
       fetch(path, { cache: "no-store" })
-        .then((response) => (response.ok ? response.json() : null))
+        .then(async (response) => {
+          const body = await response.json().catch(() => null);
+          if (!response.ok) {
+            throw new Error(body?.error ?? `Board sync failed (${response.status})`);
+          }
+          return body;
+        })
         .then((payload: DraftPayload | null) => {
-          if (!payload?.updatedAt || payload.updatedAt === stateRef.current.updatedAt) return;
+          if (!payload?.updatedAt) return;
+          if (!isDemo && payload.updatedAt === stateRef.current.updatedAt) return;
           applyPayload(payload);
         })
-        .catch(() => undefined);
+        .catch((error) => {
+          setNotice(error instanceof Error ? error.message : "Board sync failed");
+          if (isDemo && demoRole === "play" && draftId) {
+            setDemoRole("watch");
+            setDemoIdle(false);
+            void fetch(
+              `/api/demo?room=${encodeURIComponent(draftId)}&join=1`,
+              { cache: "no-store" },
+            )
+              .then((response) => (response.ok ? response.json() : null))
+              .then((payload: DraftPayload | null) => {
+                if (payload?.draft && payload.players && payload.me) {
+                  applyPayload(payload, "Your prior seat expired. Choose an open seat to rejoin.");
+                }
+              })
+              .catch(() => undefined);
+          }
+        });
     }, 3000);
     return () => window.clearInterval(timer);
   }, [ready, draftId, isDemo, demoRole, demoIdle]);
@@ -488,18 +530,39 @@ export function DraftAssistant({
   const draftComplete =
     state.draft.picks.length >=
     state.draft.teamCount * state.draft.rounds;
-  const isMyTurn = !draftComplete && current.slot === state.draft.userSlot;
+  const isMyTurn =
+    !draftComplete &&
+    current.slot === state.draft.userSlot &&
+    (!isDemo || demoRole === "play");
   const draftReport = useMemo(
     () => (draftComplete ? buildDraftReport(state.draft) : null),
     [draftComplete, state.draft],
   );
   useEffect(() => {
-    if (!draftComplete) return;
+    if (!ready) return;
     const key = `${state.leagueKey ?? "board"}:${state.draft.picks.length}`;
+    if (!reportAutoOpenReady.current) {
+      reportAutoOpenReady.current = true;
+      reportSeenKey.current = draftComplete ? key : null;
+      return;
+    }
+    if (!draftComplete) return;
     if (reportSeenKey.current === key) return;
     reportSeenKey.current = key;
     setReportOpen(true);
-  }, [draftComplete, state.leagueKey, state.draft.picks.length]);
+  }, [ready, draftComplete, state.leagueKey, state.draft.picks.length]);
+
+  useEffect(() => {
+    if (
+      !ready ||
+      isDemo ||
+      me?.role !== "admin" ||
+      previewMember ||
+      !draftComplete
+    ) return;
+    const yahooResult = new URLSearchParams(window.location.search).get("yahoo");
+    if (yahooResult === "connected") setLauncherOpen(true);
+  }, [ready, isDemo, me?.role, previewMember, draftComplete]);
   useEffect(() => {
     document.title = isMyTurn
       ? "🚨 YOUR PICK — Draft Dojo"
@@ -1020,7 +1083,10 @@ export function DraftAssistant({
     const response = await fetch("/api/demo/join", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requested ? { slot: requested } : {}),
+      body: JSON.stringify({
+        roomId: draftId,
+        ...(requested ? { slot: requested } : {}),
+      }),
     });
     const payload = (await response.json()) as DraftPayload & {
       error?: string;
@@ -1122,7 +1188,7 @@ export function DraftAssistant({
 
   async function copyDemoInvite() {
     if (!draftId) return;
-    const invite = `${window.location.origin}/demo?room=${encodeURIComponent(draftId)}`;
+    const invite = `${window.location.origin}/demo?room=${encodeURIComponent(draftId)}&join=1`;
     try {
       await navigator.clipboard.writeText(invite);
       setNotice("Invite link copied.");

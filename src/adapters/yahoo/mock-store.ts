@@ -3,9 +3,10 @@ import type { MockDraftConfig } from "./mock-runner";
 import {
   autoPickDeadline,
   autoPickIfDue,
-  humanPickCount,
+  claimHumanSlot,
   mockDraftResults,
   recordUserPick,
+  startMockClock,
 } from "./mock-runner";
 import type { YahooSyncSnapshot } from "./yahoo-api";
 
@@ -35,21 +36,50 @@ export async function loadMockConfig(
 }
 
 export async function saveMockConfig(config: MockDraftConfig): Promise<void> {
-  const sequence = humanPickCount(config);
   await prisma.syncCheckpoint.upsert({
     where: { id: checkpointId(config.leagueKey) },
     create: {
       id: checkpointId(config.leagueKey),
-      sequence,
+      sequence: 0,
       syncedAt: new Date(),
       payload: JSON.stringify(config),
     },
     update: {
-      sequence,
+      sequence: { increment: 1 },
       syncedAt: new Date(),
       payload: JSON.stringify(config),
     },
   });
+}
+
+export async function addMockHumanSlot(
+  leagueKey: string,
+  slot: number,
+): Promise<MockDraftConfig> {
+  for (let guard = 0; guard < 8; guard += 1) {
+    const row = await prisma.syncCheckpoint.findUnique({
+      where: { id: checkpointId(leagueKey) },
+    });
+    if (!row?.payload) throw new Error(`No mock draft running for ${leagueKey}`);
+    let config: MockDraftConfig;
+    try {
+      config = JSON.parse(row.payload) as MockDraftConfig;
+    } catch {
+      throw new Error(`No mock draft running for ${leagueKey}`);
+    }
+    if ((config.humanSlots ?? []).includes(slot)) return startMockClock(config);
+    const next = startMockClock(claimHumanSlot(config, slot));
+    const result = await prisma.syncCheckpoint.updateMany({
+      where: { id: row.id, sequence: row.sequence },
+      data: {
+        sequence: row.sequence + 1,
+        syncedAt: new Date(),
+        payload: JSON.stringify(next),
+      },
+    });
+    if (result.count === 1) return next;
+  }
+  throw new Error("That room changed while claiming the seat; try again");
 }
 
 export async function appendMockUserPick(
@@ -72,7 +102,7 @@ export async function appendMockUserPick(
     const result = await prisma.syncCheckpoint.updateMany({
       where: { id: checkpointId(leagueKey), sequence: row.sequence },
       data: {
-        sequence: humanPickCount(next),
+        sequence: row.sequence + 1,
         syncedAt: new Date(),
         payload: JSON.stringify(next),
       },
@@ -112,7 +142,7 @@ export async function advanceMockAutoPicks(
     const result = await prisma.syncCheckpoint.updateMany({
       where: { id: checkpointId(leagueKey), sequence: row.sequence },
       data: {
-        sequence: humanPickCount(next),
+        sequence: row.sequence + 1,
         syncedAt: new Date(),
         payload: JSON.stringify(next),
       },

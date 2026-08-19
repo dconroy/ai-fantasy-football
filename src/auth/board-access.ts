@@ -3,6 +3,7 @@ import type { User } from "@prisma/client";
 import { AuthError, getCurrentUser, requireActiveUser } from "@/auth/current-user";
 import { DEMO_COOKIE_NAME, readDemoToken, type DemoClaims } from "@/auth/demo-session";
 import { LEAGUE_DRAFT_ID } from "@/persistence/league-draft";
+import { validateDemoSeat } from "@/persistence/demo-rooms";
 
 export function boardIdForUser(user: Pick<User, "boardId" | "sleeperDraftId">): string {
   if (user.sleeperDraftId) return `sleeper:${user.sleeperDraftId}`;
@@ -33,11 +34,32 @@ export async function requireBoardAccess(
     if (!demo || demo.roomId !== draftId) {
       throw new AuthError("Join the demo room first", 401);
     }
+    if (
+      demo.role === "play" &&
+      !(await validateDemoSeat(draftId, demo.slot, demo.sessionId))
+    ) {
+      throw new AuthError("Your demo seat expired or was reclaimed", 401);
+    }
     return { draftId, user: null, demo };
   }
   const user = await requireActiveUser();
   const draftId = draftIdFromRequest(request, user);
   return { draftId, user, demo: null };
+}
+
+export async function requireDemoPlayer(
+  draftId: string,
+  demo: DemoClaims | null,
+): Promise<DemoClaims> {
+  if (
+    !demo ||
+    demo.role !== "play" ||
+    !demo.slot ||
+    !(await validateDemoSeat(draftId, demo.slot, demo.sessionId))
+  ) {
+    throw new AuthError("Choose an open demo seat first", 403);
+  }
+  return demo;
 }
 
 export async function optionalBoardAccess(request: Request): Promise<{

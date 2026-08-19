@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { getDemoClaims } from "@/auth/demo-session";
+import { getCurrentUser } from "@/auth/current-user";
 import { prisma } from "@/persistence/prisma";
+import { validateDemoSeat } from "@/persistence/demo-rooms";
 import {
   advanceMockAutoPicks,
   appendMockUserPick,
@@ -48,6 +51,34 @@ export async function POST(request: Request) {
     );
   }
 
+  const demoMock = leagueKey.startsWith("mock.demo.");
+  let actorSlot = body.slot;
+  if (demoMock) {
+    const demo = await getDemoClaims();
+    const expectedLeagueKey = demo
+      ? `mock.${demo.roomId.replace(/:/g, ".")}`
+      : null;
+    if (
+      !demo ||
+      demo.role !== "play" ||
+      !demo.slot ||
+      expectedLeagueKey !== leagueKey ||
+      !(await validateDemoSeat(demo.roomId, demo.slot, demo.sessionId))
+    ) {
+      return NextResponse.json(
+        { error: "Choose the matching demo seat before confirming a pick" },
+        { status: 403 },
+      );
+    }
+    actorSlot = demo.slot;
+  } else {
+    const user = await getCurrentUser();
+    if (!user || user.status !== "active") {
+      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    }
+    if (body.action === "confirm") actorSlot = user.draftSlot ?? undefined;
+  }
+
   if (body.action === "confirm") {
     if (!body.playerId) {
       return NextResponse.json({ error: "playerId required" }, { status: 400 });
@@ -56,7 +87,7 @@ export async function POST(request: Request) {
       const config = await appendMockUserPick(
         leagueKey,
         body.playerId,
-        body.slot,
+        actorSlot,
       );
       return NextResponse.json({
         leagueKey,

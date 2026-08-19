@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import { AuthError, requireActiveUser } from "@/auth/current-user";
+import { getDemoClaims } from "@/auth/demo-session";
 import { loadPlayerBrief } from "@/adapters/sleeper/player-brief";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
-    await requireActiveUser();
+    try {
+      await requireActiveUser();
+    } catch (error) {
+      if (!(error instanceof AuthError) || !(await getDemoClaims())) throw error;
+    }
     const url = new URL(request.url);
     const name = url.searchParams.get("name")?.trim();
     const position = url.searchParams.get("position")?.trim();

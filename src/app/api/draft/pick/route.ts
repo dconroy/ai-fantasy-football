@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { AuthError } from "@/auth/current-user";
-import { requireBoardAccess } from "@/auth/board-access";
+import { requireBoardAccess, requireDemoPlayer } from "@/auth/board-access";
 import {
   appendSharedPick,
   draftStateFor,
@@ -10,7 +10,7 @@ import {
   userPrefs,
 } from "@/persistence/league-draft";
 import { boardPayload } from "@/persistence/draft-payload";
-import { opponentPick, simulateToUserTurn } from "@/domain";
+import { opponentPick, selectionForOverall, simulateToUserTurn } from "@/domain";
 
 export const runtime = "nodejs";
 
@@ -21,6 +21,13 @@ export async function POST(request: Request) {
       playerId?: string;
       action?: "pick" | "undo" | "advance" | "simulate";
     } | null;
+
+    if (demo && body?.action) {
+      return NextResponse.json(
+        { error: "Spectators and demo players cannot control the room" },
+        { status: 403 },
+      );
+    }
 
     if (body?.action === "undo") {
       await undoSharedPick(draftId);
@@ -48,6 +55,22 @@ export async function POST(request: Request) {
 
     if (!body?.playerId) {
       return NextResponse.json({ error: "playerId required" }, { status: 400 });
+    }
+    if (demo) {
+      const player = await requireDemoPlayer(draftId, demo);
+      const shared = await getOrCreateLeagueDraft(draftId);
+      const alreadySynchronized = shared.picks.some(
+        (pick) => pick.player.id === body.playerId,
+      );
+      if (!alreadySynchronized) {
+        const current = selectionForOverall(
+          shared.picks.length + 1,
+          shared.teamCount,
+        );
+        if (current.slot !== player.slot) {
+          throw new AuthError("It is not your demo seat's turn", 403);
+        }
+      }
     }
     await appendSharedPick(body.playerId, { draftId });
     return NextResponse.json(await boardPayload(draftId, user, demo));

@@ -29,11 +29,12 @@ export async function POST(request: NextRequest) {
       );
     }
     const settings = validateDemoRoomInput(body);
-    const { shared, slot } = await createDemoRoom(settings);
+    const { shared, slot, sessionId } = await createDemoRoom(settings);
     const token = await createDemoToken({
       roomId: shared.id,
       slot,
       role: "play",
+      sessionId,
     });
     const response = NextResponse.json({
       ...shared,

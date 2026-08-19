@@ -38,7 +38,6 @@ export default function LandingPage() {
   return (
     <main className="landing">
       <div className="landing-glow" aria-hidden="true" />
-      <div className="landing-grid" aria-hidden="true" />
 
       <header className="landing-nav">
         <span className="landing-mark">
@@ -67,7 +66,7 @@ export default function LandingPage() {
         <div className="landing-hero-copy">
           <p className="eyebrow">
             <span className="eyebrow-live" aria-hidden="true" />
-            The room is moving
+            Live board · Pick 1.07
           </p>
           <h1>
             Read the room.<br />
@@ -93,10 +92,6 @@ export default function LandingPage() {
         </div>
 
         <figure className="landing-shot">
-          <span className="landing-pick-stamp" aria-hidden="true">
-            <small>ON DECK</small>
-            1.07
-          </span>
           <div className="landing-board">
             <div className="landing-board-head">
               <span className="landing-clock">

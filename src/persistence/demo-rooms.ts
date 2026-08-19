@@ -12,12 +12,12 @@ import {
   type ChenScoring,
 } from "@/adapters/chen/boris-chen";
 import {
-  claimHumanSlot,
   startMockClock,
   type MockDraftConfig,
   type MockPlayerSeed,
 } from "@/adapters/yahoo/mock-runner";
 import {
+  addMockHumanSlot,
   loadMockConfig,
   loadMockSnapshot,
   saveMockConfig,
@@ -44,51 +44,192 @@ function seatSeenKey(roomId: string) {
   return `demo-seats:${roomId}`;
 }
 
-async function loadSeatSeen(roomId: string): Promise<Record<number, string>> {
-  const row = await prisma.syncCheckpoint.findUnique({
-    where: { id: seatSeenKey(roomId) },
-  });
-  if (!row?.payload) return {};
+interface SeatLease {
+  readonly seenAt: string;
+  readonly sessionId: string;
+}
+
+type SeatLeases = Record<number, SeatLease>;
+
+function parseSeatLeases(payload?: string | null): SeatLeases {
+  if (!payload) return {};
   try {
-    return JSON.parse(row.payload) as Record<number, string>;
+    const parsed = JSON.parse(payload) as Record<
+      number,
+      string | { seenAt?: unknown; sessionId?: unknown }
+    >;
+    return Object.fromEntries(
+      Object.entries(parsed).map(([slot, value]) => [
+        slot,
+        typeof value === "string"
+          ? { seenAt: value, sessionId: "" }
+          : {
+              seenAt: typeof value.seenAt === "string" ? value.seenAt : "",
+              sessionId: typeof value.sessionId === "string" ? value.sessionId : "",
+            },
+      ]),
+    ) as SeatLeases;
   } catch {
     return {};
   }
 }
 
-async function saveSeatSeen(roomId: string, seen: Record<number, string>) {
-  await prisma.syncCheckpoint.upsert({
+async function loadSeatSeen(roomId: string): Promise<SeatLeases> {
+  const row = await prisma.syncCheckpoint.findUnique({
     where: { id: seatSeenKey(roomId) },
-    create: { id: seatSeenKey(roomId), sequence: 0, syncedAt: new Date(), payload: JSON.stringify(seen) },
-    update: { syncedAt: new Date(), payload: JSON.stringify(seen) },
   });
+  return parseSeatLeases(row?.payload);
+}
+
+function leaseIsActive(lease?: SeatLease, now = Date.now()) {
+  const seenAt = Date.parse(lease?.seenAt ?? "");
+  return Number.isFinite(seenAt) && now - seenAt < SEAT_IDLE_MS;
+}
+
+async function claimSeatLease(
+  roomId: string,
+  humanSlots: readonly number[],
+  teamCount: number,
+  requestedSlot?: number | null,
+): Promise<{ slot: number; sessionId: string }> {
+  const sessionId = randomUUID();
+  for (let guard = 0; guard < 8; guard += 1) {
+    const row = await prisma.syncCheckpoint.findUnique({
+      where: { id: seatSeenKey(roomId) },
+    });
+    const leases = parseSeatLeases(row?.payload);
+    const active = activeSeatSet(humanSlots, leases);
+    const slot =
+      requestedSlot ??
+      Array.from({ length: teamCount }, (_, index) => index + 1).find(
+        (candidate) => !active.has(candidate),
+      );
+    if (!slot) throw new Error("This demo room is full");
+    if (active.has(slot)) throw new Error(`Seat ${slot} is already taken`);
+    const next = {
+      ...leases,
+      [slot]: { seenAt: new Date().toISOString(), sessionId },
+    };
+    if (!row) {
+      try {
+        await prisma.syncCheckpoint.create({
+          data: {
+            id: seatSeenKey(roomId),
+            sequence: 1,
+            syncedAt: new Date(),
+            payload: JSON.stringify(next),
+          },
+        });
+        return { slot, sessionId };
+      } catch {
+        continue;
+      }
+    }
+    const result = await prisma.syncCheckpoint.updateMany({
+      where: { id: row.id, sequence: row.sequence },
+      data: {
+        sequence: row.sequence + 1,
+        syncedAt: new Date(),
+        payload: JSON.stringify(next),
+      },
+    });
+    if (result.count === 1) return { slot, sessionId };
+  }
+  throw new Error("That seat changed hands; choose an open seat and try again");
 }
 
 /** Human slots whose heartbeat is still fresh — i.e. actively held right now. */
 function activeSeatSet(
   humanSlots: readonly number[] | undefined,
-  seen: Record<number, string>,
+  seen: SeatLeases,
   now = Date.now(),
 ): Set<number> {
   const active = new Set<number>();
-  for (const slot of humanSlots ?? []) {
-    const ts = Date.parse(seen[slot] ?? "");
-    if (Number.isFinite(ts) && now - ts < SEAT_IDLE_MS) active.add(slot);
+  const leasedSlots = Object.keys(seen)
+    .map(Number)
+    .filter(Number.isInteger);
+  for (const slot of new Set([...(humanSlots ?? []), ...leasedSlots])) {
+    if (leaseIsActive(seen[slot], now)) active.add(slot);
   }
   return active;
 }
 
+export async function validateDemoSeat(
+  roomId: string,
+  slot: number | null,
+  sessionId: string | null,
+): Promise<boolean> {
+  if (!slot || !sessionId) return false;
+  const leases = await loadSeatSeen(roomId);
+  const lease = leases[slot];
+  return lease?.sessionId === sessionId && leaseIsActive(lease);
+}
+
+export async function releaseDemoSeat(
+  roomId: string,
+  slot: number | null,
+  sessionId: string | null,
+): Promise<void> {
+  if (!slot || !sessionId) return;
+  for (let guard = 0; guard < 5; guard += 1) {
+    const row = await prisma.syncCheckpoint.findUnique({
+      where: { id: seatSeenKey(roomId) },
+    });
+    if (!row) return;
+    const leases = parseSeatLeases(row.payload);
+    if (leases[slot]?.sessionId !== sessionId) return;
+    const next = { ...leases };
+    delete next[slot];
+    const result = await prisma.syncCheckpoint.updateMany({
+      where: { id: row.id, sequence: row.sequence },
+      data: {
+        sequence: row.sequence + 1,
+        syncedAt: new Date(),
+        payload: JSON.stringify(next),
+      },
+    });
+    if (result.count === 1) return;
+  }
+}
+
 /** Refresh the heartbeat for a seat a demo client is actively polling. */
-export async function touchDemoSeat(roomId: string, slot: number | null): Promise<void> {
-  if (!slot) return;
+export async function touchDemoSeat(
+  roomId: string,
+  slot: number | null,
+  sessionId: string | null,
+): Promise<boolean> {
+  if (!slot || !sessionId) return false;
   const shared = await getOrCreateLeagueDraft(roomId);
-  if (!shared.leagueKey) return;
+  if (!shared.leagueKey) return false;
   const config = await loadMockConfig(shared.leagueKey);
-  if (!config || !(config.humanSlots ?? []).includes(slot)) return;
-  const seen = await loadSeatSeen(roomId);
-  const last = Date.parse(seen[slot] ?? "");
-  if (Number.isFinite(last) && Date.now() - last < SEAT_HEARTBEAT_THROTTLE_MS) return;
-  await saveSeatSeen(roomId, { ...seen, [slot]: new Date().toISOString() });
+  if (!config || !(config.humanSlots ?? []).includes(slot)) return false;
+  for (let guard = 0; guard < 5; guard += 1) {
+    const row = await prisma.syncCheckpoint.findUnique({
+      where: { id: seatSeenKey(roomId) },
+    });
+    if (!row) return false;
+    const leases = parseSeatLeases(row.payload);
+    const lease = leases[slot];
+    if (lease?.sessionId !== sessionId || !leaseIsActive(lease)) return false;
+    const last = Date.parse(lease.seenAt);
+    if (Number.isFinite(last) && Date.now() - last < SEAT_HEARTBEAT_THROTTLE_MS) {
+      return true;
+    }
+    const next = {
+      ...leases,
+      [slot]: { ...lease, seenAt: new Date().toISOString() },
+    };
+    const result = await prisma.syncCheckpoint.updateMany({
+      where: { id: row.id, sequence: row.sequence },
+      data: {
+        sequence: row.sequence + 1,
+        syncedAt: new Date(),
+        payload: JSON.stringify(next),
+      },
+    });
+    if (result.count === 1) return true;
+  }
+  return false;
 }
 
 function leagueKeyFor(roomId: string) {
@@ -291,6 +432,7 @@ export async function claimDemoSeat(
 ): Promise<{
   shared: SharedDraft;
   slot: number;
+  sessionId: string;
   config: MockDraftConfig;
 }> {
   const shared = await getOrCreateLeagueDraft(roomId);
@@ -304,10 +446,6 @@ export async function claimDemoSeat(
   ) {
     throw new Error("This demo draft is complete");
   }
-  const seen = await loadSeatSeen(roomId);
-  const active = activeSeatSet(loaded.humanSlots, seen);
-
-  let slot = 0;
   if (requestedSlot != null) {
     if (
       !Number.isInteger(requestedSlot) ||
@@ -316,27 +454,25 @@ export async function claimDemoSeat(
     ) {
       throw new Error(`Seat ${requestedSlot} is not a valid slot`);
     }
-    if (active.has(requestedSlot)) {
-      throw new Error(`Seat ${requestedSlot} is already taken`);
-    }
-    slot = requestedSlot;
-  } else {
-    for (let seat = 1; seat <= shared.teamCount; seat += 1) {
-      if (!active.has(seat)) {
-        slot = seat;
-        break;
-      }
-    }
   }
-
-  if (!slot) throw new Error("This demo room is full");
+  const { slot, sessionId } = await claimSeatLease(
+    roomId,
+    loaded.humanSlots ?? [],
+    shared.teamCount,
+    requestedSlot,
+  );
   // Re-claiming an abandoned seat: it's already a human slot, so keep its picks
   // and just re-arm the heartbeat. A robot seat gets promoted to human.
   const alreadyHuman = (loaded.humanSlots ?? []).includes(slot);
-  const started = startMockClock(alreadyHuman ? loaded : claimHumanSlot(loaded, slot));
-  if (!alreadyHuman) await saveMockConfig(started);
-  await saveSeatSeen(roomId, { ...seen, [slot]: new Date().toISOString() });
-  return { shared, slot, config: started };
+  try {
+    const started = alreadyHuman
+      ? startMockClock(loaded)
+      : await addMockHumanSlot(loaded.leagueKey, slot);
+    return { shared, slot, sessionId, config: started };
+  } catch (error) {
+    await releaseDemoSeat(roomId, slot, sessionId);
+    throw error;
+  }
 }
 
 export interface CreateDemoRoomInput {
@@ -374,7 +510,12 @@ export function validateDemoRoomInput(input: {
 
 export async function createDemoRoom(
   input: CreateDemoRoomInput,
-): Promise<{ shared: SharedDraft; slot: number; config: MockDraftConfig }> {
+): Promise<{
+  shared: SharedDraft;
+  slot: number;
+  sessionId: string;
+  config: MockDraftConfig;
+}> {
   const settings = validateDemoRoomInput(input);
   const roomId = `${DEMO_ROOM_PREFIX}${randomUUID()}`;
   const leagueKey = leagueKeyFor(roomId);
@@ -411,13 +552,22 @@ export async function createDemoRoom(
     varietySeed: randomUUID(),
     players,
   });
-  await saveMockConfig(config);
-  await saveSeatSeen(roomId, {
-    [settings.slot]: new Date().toISOString(),
-  });
+  const { sessionId } = await claimSeatLease(
+    roomId,
+    config.humanSlots ?? [],
+    settings.teamCount,
+    settings.slot,
+  );
+  try {
+    await saveMockConfig(config);
+  } catch (error) {
+    await releaseDemoSeat(roomId, settings.slot, sessionId);
+    throw error;
+  }
   return {
     shared: await getOrCreateLeagueDraft(roomId),
     slot: settings.slot,
+    sessionId,
     config,
   };
 }

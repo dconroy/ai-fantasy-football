@@ -6,6 +6,7 @@ export interface DemoClaims {
   readonly roomId: string;
   readonly slot: number | null;
   readonly role: "watch" | "play";
+  readonly sessionId: string | null;
   readonly exp: number;
 }
 
@@ -36,18 +37,24 @@ export async function createDemoToken(
   ttlSeconds = 60 * 60 * 8,
 ) {
   const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
-  const payload = `${claims.roomId}.${claims.slot ?? 0}.${claims.role}.${exp}`;
+  const payload = `${claims.roomId}.${claims.slot ?? 0}.${claims.role}.${claims.sessionId ?? "none"}.${exp}`;
   return `${payload}.${await hmac(payload)}`;
 }
 
 export async function readDemoToken(token?: string): Promise<DemoClaims | null> {
   if (!token) return Promise.resolve(null);
-  const [roomId, slotRaw, role, expRaw, signature] = token.split(".");
+  const parts = token.split(".");
+  const legacy = parts.length === 5;
+  const [roomId, slotRaw, role, sessionRaw, expRaw, signature] = legacy
+    ? [parts[0], parts[1], parts[2], "none", parts[3], parts[4]]
+    : parts;
   if (!roomId || !slotRaw || !role || !expRaw || !signature) return Promise.resolve(null);
   if (role !== "watch" && role !== "play") return Promise.resolve(null);
   const exp = Number(expRaw);
   if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return Promise.resolve(null);
-  const payload = `${roomId}.${slotRaw}.${role}.${expRaw}`;
+  const payload = legacy
+    ? `${roomId}.${slotRaw}.${role}.${expRaw}`
+    : `${roomId}.${slotRaw}.${role}.${sessionRaw}.${expRaw}`;
   const expected = await hmac(payload);
   if (expected.length !== signature.length) return Promise.resolve(null);
   let mismatch = 0;
@@ -60,6 +67,7 @@ export async function readDemoToken(token?: string): Promise<DemoClaims | null> 
     roomId,
     slot: slot >= 1 && slot <= 14 ? slot : null,
     role,
+    sessionId: sessionRaw && sessionRaw !== "none" ? sessionRaw : null,
     exp,
   };
 }

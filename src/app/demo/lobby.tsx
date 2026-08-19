@@ -38,8 +38,12 @@ const SCORING_LABELS: Record<Scoring, string> = {
   ppr: "Full PPR",
 };
 
-function invitePath(roomId: string) {
+function roomPath(roomId: string) {
   return `/demo?room=${encodeURIComponent(roomId)}`;
+}
+
+function invitePath(roomId: string) {
+  return `${roomPath(roomId)}&join=1`;
 }
 
 async function copyText(value: string) {
@@ -76,9 +80,14 @@ export function DemoLobby() {
     const load = async () => {
       try {
         const response = await fetch("/api/demo/rooms", { cache: "no-store" });
-        const body = (await response.json()) as RoomsResponse;
+        const body = (await response.json()) as RoomsResponse & { error?: string };
+        if (!response.ok) {
+          if (!cancelled) setNotice(body.error ?? "Could not load public drafts.");
+          return;
+        }
         if (!cancelled && response.ok) {
           setRooms(body.rooms);
+          setNotice("");
           setSeats((previous) => {
             const next = { ...previous };
             for (const room of body.rooms) {
@@ -100,6 +109,17 @@ export function DemoLobby() {
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!created) return;
+    const path = `/api/draft?draftId=${encodeURIComponent(created.roomId)}`;
+    const heartbeat = () => {
+      void fetch(path, { cache: "no-store" });
+    };
+    heartbeat();
+    const timer = window.setInterval(heartbeat, 20_000);
+    return () => window.clearInterval(timer);
+  }, [created]);
 
   useEffect(() => {
     if (slot > teamCount) setSlot(teamCount);
@@ -130,7 +150,7 @@ export function DemoLobby() {
         setNotice(body.error ?? "That seat is no longer available.");
         return;
       }
-      router.push(invitePath(body.demo.roomId));
+      router.push(roomPath(body.demo.roomId));
     } catch {
       setNotice("Could not join that draft. Try again.");
     } finally {
@@ -177,8 +197,9 @@ export function DemoLobby() {
   }
 
   if (created) {
-    const path = invitePath(created.roomId);
-    const url = typeof window === "undefined" ? path : `${window.location.origin}${path}`;
+    const path = roomPath(created.roomId);
+    const invite = invitePath(created.roomId);
+    const url = typeof window === "undefined" ? invite : `${window.location.origin}${invite}`;
     return (
       <main className="demo-lobby">
         <section className="demo-share-card">

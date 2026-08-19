@@ -33,8 +33,8 @@ export async function GET() {
     });
   } catch {
     return NextResponse.json(
-      { totalRooms: 0, joinableRooms: 0, totalOpenSeats: 0, activePlayers: 0, rooms: [] },
-      { status: 200 },
+      { error: "Unable to load public draft rooms" },
+      { status: 503 },
     );
   }
 }

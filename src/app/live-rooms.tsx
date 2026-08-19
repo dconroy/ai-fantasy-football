@@ -32,18 +32,28 @@ function roomHref(id: string) {
 export function LiveRooms() {
   const [data, setData] = useState<RoomsResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const load = () => {
       fetch("/api/demo/rooms", { cache: "no-store" })
-        .then((response) => (response.ok ? response.json() : null))
+        .then((response) => {
+          if (!response.ok) throw new Error("Room list unavailable");
+          return response.json();
+        })
         .then((body: RoomsResponse | null) => {
           if (cancelled || !body) return;
           setData(body);
+          setLoadError(false);
           setLoaded(true);
         })
-        .catch(() => setLoaded(true));
+        .catch(() => {
+          if (!cancelled) {
+            setLoadError(true);
+            setLoaded(true);
+          }
+        });
     };
     load();
     const timer = window.setInterval(load, 8000);
@@ -53,7 +63,9 @@ export function LiveRooms() {
     };
   }, []);
 
-  const joinable = (data?.rooms ?? []).filter((room) => !room.complete);
+  const joinable = (data?.rooms ?? []).filter(
+    (room) => !room.complete && room.openSeats > 0,
+  );
   const activePlayers = data?.activePlayers ?? 0;
 
   return (
@@ -63,6 +75,8 @@ export function LiveRooms() {
         <span className="live-rooms-count">
           {!loaded
             ? "Checking live drafts…"
+            : loadError
+              ? "Live drafts are temporarily unavailable"
             : joinable.length === 0
               ? "No live drafts right now"
               : `${joinable.length} live draft${joinable.length === 1 ? "" : "s"} · ${data?.totalOpenSeats ?? 0} open seat${data?.totalOpenSeats === 1 ? "" : "s"}`}
@@ -93,11 +107,11 @@ export function LiveRooms() {
             </li>
           ))}
         </ul>
-      ) : (
+      ) : !loadError ? (
         <p className="live-rooms-empty">
           Be the first in the dojo — start a fresh room.
         </p>
-      )}
+      ) : null}
 
       <Link className="live-rooms-cta" href="/demo">
         {joinable.length > 0 ? "Browse live drafts" : "Create a demo draft"} →

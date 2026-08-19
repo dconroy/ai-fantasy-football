@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { AuthError } from "@/auth/current-user";
-import { requireBoardAccess } from "@/auth/board-access";
+import { requireBoardAccess, requireDemoPlayer } from "@/auth/board-access";
 import {
   ConflictError,
   applyChenImport,
@@ -24,7 +24,12 @@ export async function GET(request: Request) {
     const { draftId, user, demo } = await requireBoardAccess(request);
     if (user) await touchLastSeen(user);
     if (demo?.role === "play" && demo.slot) {
-      await touchDemoSeat(draftId, demo.slot).catch(() => undefined);
+      const touched = await touchDemoSeat(
+        draftId,
+        demo.slot,
+        demo.sessionId,
+      ).catch(() => false);
+      if (!touched) throw new AuthError("Your demo seat expired or was reclaimed", 401);
     }
     await ensureFreshBoardPlayers(draftId);
     await ensureBoardByes(draftId);
@@ -54,8 +59,14 @@ export async function PUT(request: Request) {
       expectedUpdatedAt?: string;
     } | null;
 
-    if (demo && body?.action === "reset") {
-      return NextResponse.json({ error: "Demo rooms cannot be reset" }, { status: 403 });
+    if (demo) {
+      if (body?.action !== "picks") {
+        return NextResponse.json(
+          { error: "Demo rooms only accept synchronized mock picks" },
+          { status: 403 },
+        );
+      }
+      await requireDemoPlayer(draftId, demo);
     }
 
     if (body?.action === "reset") {

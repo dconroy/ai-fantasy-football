@@ -7,6 +7,7 @@ import {
   listMemberSeats,
   userPrefs,
 } from "@/persistence/league-draft";
+import { takenSeatsFor } from "@/persistence/demo-rooms";
 
 export async function boardPayload(
   draftId: string,
@@ -15,7 +16,7 @@ export async function boardPayload(
 ) {
   const shared = await getOrCreateLeagueDraft(draftId);
   if (demo) {
-    const slot = demo.slot ?? 1;
+    const slot = demo.slot ?? 0;
     return {
       ...shared,
       draft: draftStateFor(shared, slot),
@@ -31,7 +32,12 @@ export async function boardPayload(
         weights: DEFAULT_STRATEGY_WEIGHTS,
         darkMode: true,
       },
-      demo: { role: demo.role, slot: demo.slot, roomId: demo.roomId },
+      demo: {
+        role: demo.role,
+        slot: demo.slot,
+        roomId: demo.roomId,
+        takenSlots: await takenSeatsFor(draftId),
+      },
     };
   }
   if (!user) throw new Error("Authentication required");
