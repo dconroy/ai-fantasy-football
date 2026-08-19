@@ -854,6 +854,20 @@ export function DraftAssistant() {
   const practiceMockActive = state.leagueKey?.startsWith("mock.") ?? false;
   const manualMockActive = state.mode === "mock";
   const mockActive = practiceMockActive || manualMockActive;
+  // Any active member may restart a mock (the board is shared and the server
+  // only requires an active session). It stays hidden on the live board via
+  // `mockActive`, so nobody can wipe a real draft night mid-pick.
+  const restartMockButton = mockActive ? (
+    <button
+      className="secondary"
+      onClick={() =>
+        void (practiceMockActive ? startMockHarness() : startSession("mock"))
+      }
+      title="Clear the shared board and run this mock again from scratch"
+    >
+      Restart mock
+    </button>
+  ) : null;
 
   async function patchUser(id: string, data: Record<string, unknown>) {
     const response = await fetch("/api/admin/users", {
@@ -1001,17 +1015,7 @@ export function DraftAssistant() {
             >
               Undo
             </button>
-            {mockActive && (
-              <button
-                className="secondary"
-                onClick={() =>
-                  void (practiceMockActive ? startMockHarness() : startSession("mock"))
-                }
-                title="Clear the board and run this mock again from scratch"
-              >
-                Restart mock
-              </button>
-            )}
+            {restartMockButton}
             <span className="strip-spacer" />
             <button
               className="live-button"
@@ -1028,10 +1032,13 @@ export function DraftAssistant() {
             </button>
           </>
         ) : (
-          <span className="strip-hint">
-            The board is shared — the admin runs mocks, resets, and syncing.
-            You pick players, pins, and avoids.
-          </span>
+          <>
+            {restartMockButton}
+            <span className="strip-hint">
+              The board is shared — anyone can restart a mock, but only the admin
+              runs live sync and resets. You pick players, pins, and avoids.
+            </span>
+          </>
         )}
       </section>
 
