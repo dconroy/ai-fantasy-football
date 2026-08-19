@@ -1241,8 +1241,8 @@ h2 {
   overflow: visible;
 }
 
-.board-cell.dock-hot {
-  z-index: 4;
+.board-cell:hover {
+  z-index: 8;
 }
 
 .board-cell.mine {
@@ -1267,12 +1267,11 @@ h2 {
   text-align: left;
   cursor: pointer;
   transform-origin: center center;
-  transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
+  transition: transform 0.12s ease;
 }
 
 button.board-pick:hover {
-  filter: brightness(1.06);
-  box-shadow: 0 10px 22px rgb(0 0 0 / 22%);
+  transform: scale(1.08);
 }
 
 @media (prefers-reduced-motion: reduce) {
