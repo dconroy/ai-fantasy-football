@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/persistence/prisma";
 import {
@@ -124,6 +125,7 @@ export async function POST(request: Request) {
     players,
     picksBySlot: {},
     autoPickMs,
+    varietySeed: randomUUID(),
   };
 
   await saveMockConfig(config);

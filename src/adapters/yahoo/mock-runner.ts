@@ -30,6 +30,13 @@ export interface MockDraftConfig {
    * mocks so an absent manager never stalls the room.
    */
   readonly autoPickMs?: number;
+  /**
+   * Immutable per-draft seed. When present, robots apply a small, deterministic
+   * preference nudge so opponents feel like managers with slight biases instead
+   * of identical best-available bots. Must never change for a given draft or the
+   * projected order would reshuffle between polls.
+   */
+  readonly varietySeed?: string;
 }
 
 interface NormalizedSeats {
@@ -77,6 +84,108 @@ const MAX_PER_POSITION: Record<MockPlayerSeed["position"], number> = {
 /** Don't touch K/DEF before this round; force the holes in the last N picks. */
 const SPECIALIST_OPEN_ROUND = 13;
 
+type PositionCount = Record<MockPlayerSeed["position"], number>;
+
+/** Minimum starters the league fields (a full lineup also adds one FLEX). */
+const STARTER_NEED: PositionCount = { QB: 1, RB: 2, WR: 2, TE: 1, K: 1, DEF: 1 };
+const FLEX_POSITIONS: ReadonlyArray<MockPlayerSeed["position"]> = ["RB", "WR", "TE"];
+
+/**
+ * How many more players a seat must draft to field a legal lineup: every
+ * position minimum plus one RB/WR/TE FLEX. Unlike a scalar "starters filled"
+ * score, this counts each requirement explicitly so a third RB can't paper over
+ * a missing TE.
+ */
+function remainingLineupNeed(counts: PositionCount): number {
+  let need = 0;
+  for (const position of Object.keys(STARTER_NEED) as Array<
+    MockPlayerSeed["position"]
+  >) {
+    need += Math.max(0, STARTER_NEED[position] - counts[position]);
+  }
+  const flexSpare = FLEX_POSITIONS.reduce(
+    (spare, position) => spare + Math.max(0, counts[position] - STARTER_NEED[position]),
+    0,
+  );
+  return need + (flexSpare >= 1 ? 0 : 1);
+}
+
+/** True when drafting `position` shrinks the outstanding lineup requirement. */
+function reducesLineupNeed(
+  counts: PositionCount,
+  position: MockPlayerSeed["position"],
+): boolean {
+  const after: PositionCount = { ...counts, [position]: counts[position] + 1 };
+  return remainingLineupNeed(after) < remainingLineupNeed(counts);
+}
+
+/**
+ * When a seat has only just enough picks left to finish a legal lineup, the best
+ * available player that fills one of the remaining starting spots. Null while
+ * there's still slack to draft best-available. Keeps auto-drafted (AFK) managers
+ * from ending up with holes like zero TE or a single RB.
+ */
+export function rosterCompletionPick(
+  sortable: readonly MockPlayerSeed[],
+  available: (player: MockPlayerSeed) => boolean,
+  counts: PositionCount,
+  remainingPicks: number,
+): MockPlayerSeed | undefined {
+  const need = remainingLineupNeed(counts);
+  if (need <= 0 || remainingPicks > need) return undefined;
+  return sortable.find(
+    (player) => available(player) && reducesLineupNeed(counts, player.position),
+  );
+}
+
+/**
+ * How far down the board a robot will even consider "reaching," and how strong
+ * that reach can be (measured in board positions). Kept intentionally small so
+ * opponents behave like managers with slight preferences rather than chaos: the
+ * best available almost always still goes, but a favored player occasionally
+ * jumps a few spots.
+ */
+const REACH_WINDOW = 6;
+const PLAYER_LEAN = 2.2;
+const POSITION_LEAN = 1.3;
+
+/** Stable 32-bit hash so a robot's preferences never reshuffle between polls. */
+function hashString(input: string): number {
+  let hash = 1779033703 ^ input.length;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = Math.imul(hash ^ input.charCodeAt(index), 3432918353);
+    hash = (hash << 13) | (hash >>> 19);
+  }
+  hash = Math.imul(hash ^ (hash >>> 16), 2246822507);
+  hash = Math.imul(hash ^ (hash >>> 13), 3266489909);
+  return (hash ^= hash >>> 16) >>> 0;
+}
+
+/** Deterministic value in [0, 1) for a set of seed parts. */
+function seededUnit(...parts: Array<string | number>): number {
+  return hashString(parts.join("|")) / 4294967296;
+}
+
+/**
+ * A per-team, per-player rank nudge (in board positions). Blends a small
+ * player-specific quirk with a per-team positional lean so seats feel distinct
+ * while staying anchored to best-available.
+ */
+function makePreference(
+  seed: string,
+  slot: number,
+): (player: MockPlayerSeed) => number {
+  return (player) => {
+    const playerLean =
+      (seededUnit(seed, "player", slot, player.id) - 0.5) * 2 * PLAYER_LEAN;
+    const positionLean =
+      (seededUnit(seed, "position", slot, player.position) - 0.5) *
+      2 *
+      POSITION_LEAN;
+    return playerLean + positionLean;
+  };
+}
+
 function missingSpecialists(
   roster: Record<MockPlayerSeed["position"], number>,
 ): Array<"K" | "DEF"> {
@@ -92,6 +201,7 @@ function chooseRobotPlayer(
   roster: Record<MockPlayerSeed["position"], number>,
   round: number,
   rounds: number,
+  preference?: (player: MockPlayerSeed) => number,
 ): MockPlayerSeed | undefined {
   const missing = missingSpecialists(roster);
   const remainingRounds = rounds - round + 1;
@@ -104,6 +214,7 @@ function chooseRobotPlayer(
     (player.position === "K" || player.position === "DEF") &&
     round < SPECIALIST_OPEN_ROUND;
 
+  // Filling a forced roster hole is not a "preference" — grab the best one.
   if (forced.length > 0) {
     for (const position of forced) {
       const specialist = sortable.find(
@@ -113,12 +224,27 @@ function chooseRobotPlayer(
     }
   }
 
-  return (
-    sortable.find(
-      (player) =>
-        available(player) && fitsCap(player) && !tooEarlySpecialist(player),
-    ) ?? sortable.find((player) => available(player))
+  const eligible = sortable.filter(
+    (player) =>
+      available(player) && fitsCap(player) && !tooEarlySpecialist(player),
   );
+  if (eligible.length === 0) return sortable.find((player) => available(player));
+  if (!preference) return eligible[0];
+
+  // Windowed reach: score the top few by their best-available position plus this
+  // seat's small preference nudge, then take the lowest. Ties keep the higher
+  // Chen rank, so the reach stays bounded and mostly favors BPA.
+  const window = eligible.slice(0, REACH_WINDOW);
+  let best = window[0];
+  let bestScore = Number.POSITIVE_INFINITY;
+  window.forEach((player, index) => {
+    const score = index + preference(player);
+    if (score < bestScore) {
+      bestScore = score;
+      best = player;
+    }
+  });
+  return best;
 }
 
 /** Snake-order slot for a 1-indexed overall pick. */
@@ -180,12 +306,16 @@ export function projectedDraftOrder(config: MockDraftConfig): MockPlayerSeed[] {
     }
 
     const roster = rosters[slot - 1];
+    const preference = config.varietySeed
+      ? makePreference(config.varietySeed, slot)
+      : undefined;
     const choice = chooseRobotPlayer(
       sortable,
       (player) => remaining.has(player.id),
       roster,
       round,
       config.rounds,
+      preference,
     );
     if (!choice) break;
     remaining.delete(choice.id);
@@ -360,17 +490,31 @@ export function autoPickPlayerId(config: MockDraftConfig): string | null {
     return (a.adp ?? 9999) - (b.adp ?? 9999);
   });
   const drafted = new Set(order.map((player) => player.id));
+  const available = (player: MockPlayerSeed) => !drafted.has(player.id);
   const roster: Record<MockPlayerSeed["position"], number> = {
     QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0,
   };
+  let picked = 0;
   order.forEach((player, index) => {
     if (slotForOverall(index + 1, config.teamCount) === slot) {
       roster[player.position] += 1;
+      picked += 1;
     }
   });
+
+  // If the seat is running out of picks, prioritize finishing a legal starting
+  // lineup so an AFK manager never ends with a hole (e.g. no TE / one RB).
+  const completion = rosterCompletionPick(
+    sortable,
+    available,
+    roster,
+    config.rounds - picked,
+  );
+  if (completion) return completion.id;
+
   const choice = chooseRobotPlayer(
     sortable,
-    (player) => !drafted.has(player.id),
+    available,
     roster,
     round,
     config.rounds,

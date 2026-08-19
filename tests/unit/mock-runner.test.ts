@@ -7,6 +7,7 @@ import {
   mockDraftResults,
   projectedDraftOrder,
   recordUserPick,
+  rosterCompletionPick,
   slotForOverall,
   waitingSlot,
   type MockDraftConfig,
@@ -194,6 +195,92 @@ describe("mock-runner", () => {
       expect(roster.some((player) => player.position === "K")).toBe(true);
       expect(roster.some((player) => player.position === "DEF")).toBe(true);
     }
+  });
+
+  it("applies stable, bounded variance to robot picks when seeded", () => {
+    // Slot 13 never comes on the clock in a 12-team draft, so every pick is a
+    // robot and we can inspect the full projected board.
+    const allRobots = (varietySeed?: string) =>
+      config({ humanSlots: [13], picksBySlot: {}, varietySeed });
+
+    const bpa = projectedDraftOrder(allRobots()).map((player) => player.id);
+    const varied = projectedDraftOrder(allRobots("seed-abc")).map((p) => p.id);
+
+    // Same board size, no duplicates, every id is real.
+    expect(varied).toHaveLength(bpa.length);
+    expect(new Set(varied).size).toBe(varied.length);
+
+    // Deterministic: recomputing the same seed yields the identical order, so the
+    // projector never reshuffles between polls.
+    expect(projectedDraftOrder(allRobots("seed-abc")).map((p) => p.id)).toEqual(
+      varied,
+    );
+
+    // The nudge actually changes something versus strict best-available.
+    expect(varied).not.toEqual(bpa);
+  });
+
+  it("gives different seats different preferences", () => {
+    const seedA = projectedDraftOrder(
+      config({ humanSlots: [13], picksBySlot: {}, varietySeed: "alpha" }),
+    ).map((p) => p.id);
+    const seedB = projectedDraftOrder(
+      config({ humanSlots: [13], picksBySlot: {}, varietySeed: "beta" }),
+    ).map((p) => p.id);
+    expect(seedA).not.toEqual(seedB);
+  });
+
+  it("forces a starter hole shut once picks run tight", () => {
+    // Lineup is one TE short; the flex is already covered by a third RB.
+    const counts = { QB: 1, RB: 3, WR: 2, TE: 0, K: 1, DEF: 1 };
+    const board: MockPlayerSeed[] = [
+      { id: "rb", name: "RB", position: "RB", team: "KC", chenRank: 1 },
+      { id: "te", name: "TE", position: "TE", team: "KC", chenRank: 90 },
+    ];
+    const available = () => true;
+
+    // Two picks left is slack — draft best available, not a forced need.
+    expect(rosterCompletionPick(board, available, counts, 2)).toBeUndefined();
+    // One pick left must plug the TE hole even though an RB ranks far higher.
+    expect(rosterCompletionPick(board, available, counts, 1)?.id).toBe("te");
+  });
+
+  it("auto-drafts an AFK seat into a complete starting lineup", () => {
+    let cfg = config({
+      teamCount: 4,
+      rounds: 10,
+      humanSlots: [1],
+      picksBySlot: {},
+      autoPickMs: 1,
+    });
+    // Nobody ever confirms for slot 1; drive the whole draft via auto-pick.
+    const now = 1_000_000_000_000;
+    for (let guard = 0; guard < 500; guard += 1) {
+      const next = autoPickIfDue(cfg, now);
+      if (!next) break;
+      cfg = next;
+    }
+
+    expect(projectedDraftOrder(cfg)).toHaveLength(40);
+    const byId = new Map(cfg.players.map((player) => [player.id, player]));
+    const mine = cfg.picksBySlot?.[1] ?? [];
+    expect(mine).toHaveLength(10);
+
+    const counts = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 };
+    for (const id of mine) counts[byId.get(id)!.position] += 1;
+
+    expect(counts.QB).toBeGreaterThanOrEqual(1);
+    expect(counts.RB).toBeGreaterThanOrEqual(2);
+    expect(counts.WR).toBeGreaterThanOrEqual(2);
+    expect(counts.TE).toBeGreaterThanOrEqual(1);
+    expect(counts.K).toBeGreaterThanOrEqual(1);
+    expect(counts.DEF).toBeGreaterThanOrEqual(1);
+    // A RB/WR/TE beyond the minimums covers the FLEX.
+    const flexSpare =
+      Math.max(0, counts.RB - 2) +
+      Math.max(0, counts.WR - 2) +
+      Math.max(0, counts.TE - 1);
+    expect(flexSpare).toBeGreaterThanOrEqual(1);
   });
 
   it("does not auto-draft when the feature is disabled", () => {
