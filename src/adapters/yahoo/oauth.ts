@@ -5,7 +5,6 @@ import type { User } from "@prisma/client";
 const AUTHORIZE_URL = "https://api.login.yahoo.com/oauth2/request_auth";
 const TOKEN_URL = "https://api.login.yahoo.com/oauth2/get_token";
 const LEGACY_CREDENTIAL_ID = "yahoo-primary";
-const MAX_USERS = 8;
 
 interface YahooTokenResponse {
   access_token: string;
@@ -178,6 +177,7 @@ async function persistUserTokens(
       encryptedRefreshToken: encrypt(refreshToken),
       expiresAt,
       scope: tokens.scope,
+      status: "active",
     },
   });
 }
@@ -197,13 +197,12 @@ export async function exchangeYahooCode(code: string): Promise<YahooLoginResult>
   if (!tokens.refresh_token) throw new Error("Yahoo did not return a refresh token");
 
   const existing = await prisma.user.findUnique({ where: { yahooGuid: guid } });
-  const userCount = await prisma.user.count();
-  if (!existing && userCount >= MAX_USERS) {
-    throw new Error("This draft room is full");
-  }
+  const yahooCount = await prisma.user.count({
+    where: { NOT: { yahooGuid: { startsWith: "sleeper:" } } },
+  });
 
   const expiresAt = new Date(Date.now() + Math.max(60, tokens.expires_in) * 1_000);
-  const isFirst = !existing && userCount === 0;
+  const isFirst = !existing && yahooCount === 0;
   // If TOKEN_ENCRYPTION_KEY was rotated, stored tokens can't be decrypted
   // anymore. That's fine on login — Yahoo just issued fresh ones.
   let priorRefresh: string | undefined;
@@ -221,13 +220,14 @@ export async function exchangeYahooCode(code: string): Promise<YahooLoginResult>
           yahooGuid: guid,
           displayName: displayNameFromTokens(tokens, guid, profile?.name),
           role: isFirst ? "admin" : "member",
-          status: isFirst ? "active" : "pending",
+          status: "active",
           encryptedAccessToken: encrypt(tokens.access_token),
           encryptedRefreshToken: encrypt(tokens.refresh_token),
           expiresAt,
           scope: tokens.scope,
           draftSlot: isFirst ? 5 : null,
           teamName: isFirst ? "Cobra Kai" : null,
+          boardId: isFirst ? null : `yahoo:${guid}`,
         },
       });
 

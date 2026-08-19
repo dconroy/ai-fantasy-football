@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Conroy's AI Draft Room",
-  description: "The Full Contact league's Chen-first fantasy football command center",
+  title: "Draft Dojo",
+  description: "Recalculates your top five after every pick.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

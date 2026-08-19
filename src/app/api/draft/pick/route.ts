@@ -1,49 +1,38 @@
 import { NextResponse } from "next/server";
-import { AuthError, requireActiveUser } from "@/auth/current-user";
+import { AuthError } from "@/auth/current-user";
+import { requireBoardAccess } from "@/auth/board-access";
 import {
   appendSharedPick,
   draftStateFor,
   getOrCreateLeagueDraft,
-  listMemberSeats,
   savePicks,
   undoSharedPick,
   userPrefs,
 } from "@/persistence/league-draft";
+import { boardPayload } from "@/persistence/draft-payload";
 import { opponentPick, simulateToUserTurn } from "@/domain";
 
 export const runtime = "nodejs";
 
-async function payload() {
-  const [shared, members, user] = await Promise.all([
-    getOrCreateLeagueDraft(),
-    listMemberSeats(),
-    requireActiveUser(),
-  ]);
-  const prefs = userPrefs(user);
-  return {
-    ...shared,
-    draft: draftStateFor(shared, prefs.draftSlot),
-    members,
-    me: { id: user.id, displayName: user.displayName, role: user.role, ...prefs },
-  };
-}
-
 export async function POST(request: Request) {
   try {
-    await requireActiveUser();
+    const { draftId, user, demo } = await requireBoardAccess(request);
     const body = (await request.json().catch(() => null)) as {
       playerId?: string;
       action?: "pick" | "undo" | "advance" | "simulate";
     } | null;
 
     if (body?.action === "undo") {
-      await undoSharedPick();
-      return NextResponse.json(await payload());
+      await undoSharedPick(draftId);
+      return NextResponse.json(await boardPayload(draftId, user, demo));
     }
 
     if (body?.action === "advance" || body?.action === "simulate") {
-      const shared = await getOrCreateLeagueDraft();
-      const user = await requireActiveUser();
+      if (demo) {
+        return NextResponse.json({ error: "Demo rooms are timer-driven" }, { status: 403 });
+      }
+      const shared = await getOrCreateLeagueDraft(draftId);
+      if (!user) throw new AuthError("Authentication required", 401);
       const prefs = userPrefs(user);
       const current = draftStateFor(shared, prefs.draftSlot);
       const next =
@@ -53,15 +42,15 @@ export async function POST(request: Request) {
       if (next.picks.length <= shared.picks.length) {
         return NextResponse.json({ error: "No opponent pick available" }, { status: 409 });
       }
-      await savePicks(next.picks);
-      return NextResponse.json(await payload());
+      await savePicks(next.picks, draftId);
+      return NextResponse.json(await boardPayload(draftId, user, demo));
     }
 
     if (!body?.playerId) {
       return NextResponse.json({ error: "playerId required" }, { status: 400 });
     }
-    await appendSharedPick(body.playerId);
-    return NextResponse.json(await payload());
+    await appendSharedPick(body.playerId, { draftId });
+    return NextResponse.json(await boardPayload(draftId, user, demo));
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

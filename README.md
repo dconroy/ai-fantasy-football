@@ -1,8 +1,10 @@
 <div align="center">
 
-# Full Contact · AI Fantasy Draft Room
+# Draft Dojo
 
-**Strike first. Draft smart. Show no mercy.**
+**Recalculates your top five after every pick.**
+
+Public site: [dojo.football](https://dojo.football). Full Contact remains the private Yahoo league.
 
 A local, desktop-first **12-team 0.5-PPR snake draft** command center. It watches the
 draft, does the math after every pick, and tells your league who to take — you still
@@ -12,8 +14,7 @@ make the real selection in Yahoo. It never submits a pick on your behalf.
 
 </div>
 
-> Not a developer? Read **[HOW-IT-WORKS.md](HOW-IT-WORKS.md)** for the whole app in plain
-> English. Building on it? See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the technical design.
+> Using the app? Read **[USER.md](USER.md)**. Building on it? See **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
 The rankings shown throughout this README are Boris Chen's public tiers loaded live and
 cached; player names/headshots are real, but treat any specific board as a **demonstration**

@@ -21,14 +21,23 @@ function toMe(user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>) {
     role: user.role,
     status: user.status,
     yahooGuid: user.yahooGuid,
+    boardId: user.sleeperDraftId
+      ? `sleeper:${user.sleeperDraftId}`
+      : user.boardId ?? "full-contact-2026",
     ...prefs,
   };
 }
 
 export async function GET() {
-  const user = await getCurrentUser();
+  let user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+  if (user.status !== "active") {
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: { status: "active" },
+    });
   }
   const response = NextResponse.json(toMe(user));
   response.cookies.set(
@@ -43,7 +52,9 @@ export async function PUT(request: Request) {
   try {
     const user = await getCurrentUser();
     if (!user) throw new AuthError("Authentication required", 401);
-    if (user.status !== "active") throw new AuthError("Account is pending approval", 403);
+    if (user.status !== "active") {
+      await prisma.user.update({ where: { id: user.id }, data: { status: "active" } });
+    }
 
     const body = (await request.json().catch(() => null)) as {
       draftSlot?: number;
@@ -67,6 +78,7 @@ export async function PUT(request: Request) {
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: {
+        status: "active",
         draftSlot,
         teamName: body?.teamName?.trim() || user.teamName,
         displayName: body?.displayName?.trim() || user.displayName,

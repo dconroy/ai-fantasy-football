@@ -93,6 +93,10 @@ model User {
   weightsJson           String?
   darkMode              Boolean  @default(false)
   lastSeenAt            DateTime?
+  boardId               String?
+  sleeperUsername       String?
+  sleeperLeagueId       String?
+  sleeperDraftId        String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }

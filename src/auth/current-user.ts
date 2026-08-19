@@ -24,8 +24,11 @@ export async function getCurrentUser(): Promise<AppUser | null> {
 export async function requireActiveUser(): Promise<AppUser> {
   const user = await getCurrentUser();
   if (!user) throw new AuthError("Authentication required", 401);
-  if (user.status !== "active") throw new AuthError("Account is pending approval", 403);
-  return user;
+  if (user.status === "active") return user;
+  return prisma.user.update({
+    where: { id: user.id },
+    data: { status: "active" },
+  });
 }
 
 export async function requireAdmin(): Promise<AppUser> {

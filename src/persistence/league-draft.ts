@@ -11,10 +11,7 @@ import {
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
 import type { ChenImport } from "@/adapters/chen/boris-chen";
 import { scoringFromSource } from "@/adapters/chen/boris-chen";
-import {
-  getFreshChenImport,
-  readCachedChenImport,
-} from "@/adapters/chen/server-cache";
+import { getFreshChenImport } from "@/adapters/chen/server-cache";
 import {
   getPlayerMetaIndex,
   playerMetaKey,
@@ -80,19 +77,18 @@ async function freshPlayersFromChen() {
   return shapeChenImport(await getFreshChenImport());
 }
 
-async function playersFromChenCache() {
-  return shapeChenImport(await readCachedChenImport());
-}
-
-export async function getOrCreateLeagueDraft(): Promise<SharedDraft> {
+export async function getOrCreateLeagueDraft(
+  draftId = LEAGUE_DRAFT_ID,
+): Promise<SharedDraft> {
   const existing = await prisma.leagueDraft.findUnique({
-    where: { id: LEAGUE_DRAFT_ID },
+    where: { id: draftId },
   });
+  const houseBoard = draftId === LEAGUE_DRAFT_ID;
   const stillSynthetic =
     !existing ||
     existing.playersJson === "[]" ||
     existing.source === "Built-in mock data";
-  if (existing && !stillSynthetic) {
+  if (existing && (!houseBoard || !stillSynthetic)) {
     return toShared(existing);
   }
 
@@ -104,18 +100,20 @@ export async function getOrCreateLeagueDraft(): Promise<SharedDraft> {
   };
 
   const created = await prisma.leagueDraft.upsert({
-    where: { id: LEAGUE_DRAFT_ID },
+    where: { id: draftId },
     create: {
-      id: LEAGUE_DRAFT_ID,
+      id: draftId,
       playersJson: JSON.stringify(seed.players),
       importedAt: seed.importedAt,
       source: seed.source,
     },
-    update: {
-      playersJson: JSON.stringify(seed.players),
-      importedAt: seed.importedAt,
-      source: seed.source,
-    },
+    update: houseBoard
+      ? {
+          playersJson: JSON.stringify(seed.players),
+          importedAt: seed.importedAt,
+          source: seed.source,
+        }
+      : {},
   });
   return toShared(created);
 }
@@ -128,11 +126,13 @@ const FRESHNESS_CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes per instance
  * a button. Only refreshes while the draft has not started (no picks) so live
  * rankings never shift mid-draft. Throttled so board polling stays cheap.
  */
-export async function ensureFreshBoardPlayers(): Promise<void> {
+export async function ensureFreshBoardPlayers(
+  draftId = LEAGUE_DRAFT_ID,
+): Promise<void> {
   if (Date.now() - lastFreshnessCheck < FRESHNESS_CHECK_INTERVAL_MS) return;
   lastFreshnessCheck = Date.now();
   try {
-    const current = await getOrCreateLeagueDraft();
+    const current = await getOrCreateLeagueDraft(draftId);
     if (current.picks.length > 0) return;
     const isSynthetic = current.source === "Built-in mock data";
     const scoring = scoringFromSource(current.source);
@@ -146,6 +146,7 @@ export async function ensureFreshBoardPlayers(): Promise<void> {
       fresh.players.length !== current.players.length;
     if (!changed) return;
     await saveSharedDraft({
+      draftId,
       players: fresh.players,
       source: fresh.source,
       importedAt: fresh.importedAt,
@@ -297,9 +298,24 @@ export function draftStateFor(shared: SharedDraft, userSlot: number): DraftState
   };
 }
 
-export async function listMemberSeats(): Promise<MemberSeat[]> {
+export async function listMemberSeats(
+  draftId = LEAGUE_DRAFT_ID,
+): Promise<MemberSeat[]> {
   const users = await prisma.user.findMany({
-    where: { status: { in: ["active", "pending"] } },
+    where:
+      draftId === LEAGUE_DRAFT_ID
+        ? {
+            boardId: null,
+            NOT: { yahooGuid: { startsWith: "sleeper:" } },
+          }
+        : {
+            OR: [
+              { boardId: draftId },
+              draftId.startsWith("sleeper:")
+                ? { sleeperDraftId: draftId.slice("sleeper:".length) }
+                : { boardId: draftId },
+            ],
+          },
     orderBy: { createdAt: "asc" },
     select: {
       id: true,
@@ -327,6 +343,7 @@ export async function touchLastSeen(user: User): Promise<void> {
 }
 
 export async function saveSharedDraft(input: {
+  readonly draftId?: string;
   readonly mode?: "mock" | "live";
   readonly leagueKey?: string | null;
   readonly picks?: readonly Pick[];
@@ -335,12 +352,13 @@ export async function saveSharedDraft(input: {
   readonly source?: string;
   readonly expectedUpdatedAt?: string;
 }): Promise<SharedDraft> {
-  const current = await getOrCreateLeagueDraft();
+  const draftId = input.draftId ?? LEAGUE_DRAFT_ID;
+  const current = await getOrCreateLeagueDraft(draftId);
   if (input.expectedUpdatedAt && input.expectedUpdatedAt !== current.updatedAt) {
     throw new ConflictError("Draft was updated by someone else");
   }
   const updated = await prisma.leagueDraft.update({
-    where: { id: LEAGUE_DRAFT_ID },
+    where: { id: draftId },
     data: {
       mode: input.mode ?? current.mode,
       leagueKey: input.leagueKey === undefined ? current.leagueKey : input.leagueKey,
@@ -355,9 +373,9 @@ export async function saveSharedDraft(input: {
 
 export async function appendSharedPick(
   playerId: string,
-  options: { readonly madeAt?: string } = {},
+  options: { readonly madeAt?: string; readonly draftId?: string } = {},
 ): Promise<SharedDraft> {
-  const current = await getOrCreateLeagueDraft();
+  const current = await getOrCreateLeagueDraft(options.draftId);
   const player = current.players.find((item) => item.id === playerId);
   if (!player) throw new Error(`Unknown player ${playerId}`);
   // Idempotent: if this player is already on the board (e.g. another client
@@ -369,24 +387,31 @@ export async function appendSharedPick(
   const next = makeManualPick(draftStateFor(current, 1), player, {
     madeAt: options.madeAt ?? new Date().toISOString(),
   });
-  return saveSharedDraft({ picks: next.picks });
+  return saveSharedDraft({ draftId: options.draftId, picks: next.picks });
 }
 
-export async function savePicks(picks: readonly Pick[]): Promise<SharedDraft> {
-  return saveSharedDraft({ picks });
+export async function savePicks(
+  picks: readonly Pick[],
+  draftId = LEAGUE_DRAFT_ID,
+): Promise<SharedDraft> {
+  return saveSharedDraft({ draftId, picks });
 }
 
-export async function undoSharedPick(): Promise<SharedDraft> {
-  const current = await getOrCreateLeagueDraft();
+export async function undoSharedPick(
+  draftId = LEAGUE_DRAFT_ID,
+): Promise<SharedDraft> {
+  const current = await getOrCreateLeagueDraft(draftId);
   const next = undoLastPick(draftStateFor(current, 1));
-  return saveSharedDraft({ picks: next.picks });
+  return saveSharedDraft({ draftId, picks: next.picks });
 }
 
 export async function resetSharedDraft(
   mode: "mock" | "live",
   leagueKey?: string | null,
+  draftId = LEAGUE_DRAFT_ID,
 ): Promise<SharedDraft> {
   return saveSharedDraft({
+    draftId,
     mode,
     picks: [],
     ...(leagueKey === undefined ? {} : { leagueKey }),
@@ -397,8 +422,10 @@ export async function replacePlayers(
   players: readonly Player[],
   source: string,
   importedAt: string,
+  draftId = LEAGUE_DRAFT_ID,
 ): Promise<SharedDraft> {
   return saveSharedDraft({
+    draftId,
     players,
     source,
     importedAt,
@@ -408,12 +435,16 @@ export async function replacePlayers(
 }
 
 /** Apply a Chen list. Empty boards are replaced; live boards only get ranks remapped. */
-export async function applyChenImport(imported: ChenImport): Promise<SharedDraft> {
+export async function applyChenImport(
+  imported: ChenImport,
+  draftId = LEAGUE_DRAFT_ID,
+): Promise<SharedDraft> {
   const incoming = shapeChenImport(imported);
   if (!incoming) throw new Error("Chen import contained no players");
-  const current = await getOrCreateLeagueDraft();
+  const current = await getOrCreateLeagueDraft(draftId);
   if (current.picks.length === 0) {
     return saveSharedDraft({
+      draftId,
       players: incoming.players,
       source: incoming.source,
       importedAt: incoming.importedAt,
@@ -447,6 +478,7 @@ export async function applyChenImport(imported: ChenImport): Promise<SharedDraft
     }
   }
   return saveSharedDraft({
+    draftId,
     players: merged,
     source: incoming.source,
     importedAt: incoming.importedAt,

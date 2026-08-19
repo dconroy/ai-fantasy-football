@@ -190,6 +190,31 @@ describe("transparent recommendations", () => {
   });
 });
 
+describe("late-draft recommendations", () => {
+  it("still returns five options after the user slot has no remaining pick", () => {
+    const leftover = Array.from({ length: 20 }, (_, index) =>
+      candidate(`board-${index + 1}`, "WR", 80 + index, 8, {
+        team: `X${index}`,
+      }),
+    );
+    let state = createDraftState(5);
+    const total = state.teamCount * state.rounds;
+    for (let overall = 1; overall <= total; overall += 1) {
+      const slot = ((overall - 1) % 12) + 1;
+      // Fill the board except leave leftover WRs undrafted by using unique ids.
+      state = makeManualPick(
+        state,
+        candidate(`taken-${overall}`, slot === 5 ? "RB" : "WR", overall, 5, {
+          team: `T${overall % 20}`,
+        }),
+      );
+    }
+    const result = recommendPlayers(state, leftover);
+    expect(result.recommendations).toHaveLength(5);
+    expect(result.picksUntilFollowingSelection).toBeNull();
+  });
+});
+
 describe("automatic behavior safety", () => {
   it("is disabled by default", () => {
     expect(AUTOMATIC_BEHAVIOR).toEqual({

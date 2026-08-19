@@ -77,8 +77,12 @@ function evaluatePlayer(
     state.userSlot,
     state.rounds,
     state.teamCount,
-  );
-  if (!next) return null;
+  ) ?? {
+    overall: currentOverall,
+    round:
+      Math.floor((Math.max(1, currentOverall) - 1) / state.teamCount) + 1,
+    slot: state.userSlot,
+  };
   const following = followingSelectionForSlot(
     currentOverall,
     state.userSlot,
@@ -88,6 +92,7 @@ function evaluatePlayer(
   const ownRoster = rosterPicks(state.picks, state.userSlot);
   const suggestedRosterSlot = assignRosterSlot(player, ownRoster, {
     limits: config.rosterLimits,
+    overflowBench: true,
   });
   if (!suggestedRosterSlot) return null;
 

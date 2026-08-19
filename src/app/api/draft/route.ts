@@ -1,50 +1,30 @@
 import { NextResponse } from "next/server";
-import { AuthError, requireActiveUser } from "@/auth/current-user";
+import { AuthError } from "@/auth/current-user";
+import { requireBoardAccess } from "@/auth/board-access";
 import {
   ConflictError,
-  draftStateFor,
+  applyChenImport,
   ensureBoardByes,
   ensureFreshBoardPlayers,
   getOrCreateLeagueDraft,
-  listMemberSeats,
-  applyChenImport,
   replacePlayers,
   resetSharedDraft,
   saveSharedDraft,
   touchLastSeen,
-  userPrefs,
 } from "@/persistence/league-draft";
+import { boardPayload } from "@/persistence/draft-payload";
 import type { ChenImport } from "@/adapters/chen/boris-chen";
 import type { DraftState, Player } from "@/domain";
 
 export const runtime = "nodejs";
 
-async function payload() {
-  const user = await requireActiveUser();
-  await touchLastSeen(user);
-  const [shared, members] = await Promise.all([
-    getOrCreateLeagueDraft(),
-    listMemberSeats(),
-  ]);
-  const prefs = userPrefs(user);
-  return {
-    ...shared,
-    draft: draftStateFor(shared, prefs.draftSlot),
-    members,
-    me: {
-      id: user.id,
-      displayName: user.displayName,
-      role: user.role,
-      ...prefs,
-    },
-  };
-}
-
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    await ensureFreshBoardPlayers();
+    const { draftId, user, demo } = await requireBoardAccess(request);
+    if (user) await touchLastSeen(user);
+    await ensureFreshBoardPlayers(draftId);
     await ensureBoardByes();
-    return NextResponse.json(await payload());
+    return NextResponse.json(await boardPayload(draftId, user, demo));
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -55,7 +35,8 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    await requireActiveUser();
+    const access = await requireBoardAccess(request);
+    const { draftId, user, demo } = access;
     const body = (await request.json().catch(() => null)) as {
       action?: "reset" | "players" | "chen" | "leagueKey" | "picks";
       mode?: "mock" | "live";
@@ -69,26 +50,33 @@ export async function PUT(request: Request) {
       expectedUpdatedAt?: string;
     } | null;
 
+    if (demo && body?.action === "reset") {
+      return NextResponse.json({ error: "Demo rooms cannot be reset" }, { status: 403 });
+    }
+
     if (body?.action === "reset") {
       await resetSharedDraft(
         body.mode === "live" ? "live" : "mock",
         body.leagueKey,
+        draftId,
       );
     } else if (body?.action === "chen" && body.chen?.players?.length) {
-      await applyChenImport(body.chen);
+      await applyChenImport(body.chen, draftId);
     } else if (body?.action === "players" && Array.isArray(body.players)) {
       await replacePlayers(
         body.players,
         body.source ?? "Imported",
         body.importedAt ?? new Date().toISOString(),
+        draftId,
       );
     } else if (body?.action === "leagueKey") {
       await saveSharedDraft({
+        draftId,
         leagueKey: body.leagueKey ?? null,
         expectedUpdatedAt: body.expectedUpdatedAt,
       });
     } else if (body?.action === "picks" && Array.isArray(body.picks)) {
-      const current = await getOrCreateLeagueDraft();
+      const current = await getOrCreateLeagueDraft(draftId);
       const replacingMock =
         body.replace === true && current.leagueKey?.startsWith("mock.");
       if (!replacingMock && body.picks.length < current.picks.length) {
@@ -98,17 +86,19 @@ export async function PUT(request: Request) {
         );
       }
       await saveSharedDraft({
+        draftId,
         picks: body.picks,
         expectedUpdatedAt: body.expectedUpdatedAt,
       });
     } else if (body?.mode) {
       await saveSharedDraft({
+        draftId,
         mode: body.mode,
         expectedUpdatedAt: body.expectedUpdatedAt,
       });
     }
 
-    return NextResponse.json(await payload());
+    return NextResponse.json(await boardPayload(draftId, user, demo));
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

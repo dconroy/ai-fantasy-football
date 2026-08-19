@@ -3,6 +3,7 @@ import { getValidYahooAccessToken } from "@/adapters/yahoo/oauth";
 import { YahooApi } from "@/adapters/yahoo/yahoo-api";
 import type { YahooPlayerInfo } from "@/adapters/yahoo/parsers";
 import { loadMockSnapshot } from "@/adapters/yahoo/mock-store";
+import { fetchSleeperSnapshot } from "@/adapters/sleeper/draft";
 import { prisma } from "@/persistence/prisma";
 
 export const runtime = "nodejs";
@@ -55,7 +56,9 @@ export async function GET(request: Request) {
   try {
     const snapshot = leagueKey.startsWith("mock.")
       ? await loadMockSnapshot(leagueKey)
-      : await fetchRealSnapshot(leagueKey);
+      : leagueKey.startsWith("sleeper.")
+        ? await fetchSleeperSnapshot(leagueKey.slice("sleeper.".length))
+        : await fetchRealSnapshot(leagueKey);
     if (!snapshot) {
       return NextResponse.json(
         { error: `No mock draft running for ${leagueKey}` },

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { WeeklyHq } from "@/components/weekly-hq";
 
 export const metadata: Metadata = {
-  title: "Weekly HQ · Conroy's AI Draft Dojo",
+  title: "Weekly HQ · Draft Dojo",
 };
 
 export default function WeeklyPage() {

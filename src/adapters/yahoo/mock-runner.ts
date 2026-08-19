@@ -14,6 +14,7 @@ export interface MockDraftConfig {
   readonly teamCount: number;
   readonly rounds: number;
   readonly intervalMs: number;
+  /** Empty / invalid means the mock is paused (no clock). */
   readonly startedAtIso: string;
   readonly players: readonly MockPlayerSeed[];
   /** Draft slots that pause for a human to confirm. Robots fill the rest. */
@@ -406,6 +407,39 @@ export function mockDraftResults(
  * When `expectedSlot` is provided it must match the on-clock seat — this guards
  * against a stale client confirming out of turn.
  */
+/** Add a human seat mid-draft. Already-published robot picks for that seat stay. */
+export function claimHumanSlot(
+  config: MockDraftConfig,
+  slot: number,
+): MockDraftConfig {
+  if (!Number.isInteger(slot) || slot < 1 || slot > config.teamCount) {
+    throw new Error(`Slot must be between 1 and ${config.teamCount}`);
+  }
+  const { humanSlots, picksBySlot } = normalizeSeats(config);
+  if (humanSlots.has(slot)) {
+    throw new Error(`Slot ${slot} is already taken`);
+  }
+  const inherited: string[] = [];
+  for (const pick of mockDraftResults(config).picks) {
+    if (slotForOverall(pick.pick, config.teamCount) === slot) {
+      inherited.push(pick.playerKey.replace(/^mock\.p\./, ""));
+    }
+  }
+  return {
+    ...config,
+    humanSlots: [...humanSlots, slot].sort((a, b) => a - b),
+    picksBySlot: { ...picksBySlot, [slot]: inherited },
+  };
+}
+
+export function startMockClock(
+  config: MockDraftConfig,
+  now: number = Date.now(),
+): MockDraftConfig {
+  if (Number.isFinite(Date.parse(config.startedAtIso))) return config;
+  return { ...config, startedAtIso: new Date(now).toISOString() };
+}
+
 export function recordUserPick(
   config: MockDraftConfig,
   playerId: string,

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   analyzeDraftRoster,
@@ -26,6 +27,7 @@ import {
   scoringFromSource,
   type ChenScoring,
 } from "@/adapters/chen/boris-chen";
+import { sourceFromBoard } from "@/adapters/rankings/labels";
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
 import { resolvePlayerIdentity } from "@/domain/identity";
 import { formatStamp } from "@/lib/build-info";
@@ -237,7 +239,19 @@ function TeamLogo({ team, size = 16 }: { team?: string; size?: number }) {
   );
 }
 
-export function DraftAssistant() {
+export function DraftAssistant({
+  variant = "league",
+}: {
+  variant?: "league" | "demo";
+} = {}) {
+  const isDemo = variant === "demo";
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [demoRole, setDemoRole] = useState<"watch" | "play" | null>(
+    isDemo ? "watch" : null,
+  );
+  const [rankingSources, setRankingSources] = useState<
+    Array<{ id: string; label: string; available: boolean }>
+  >([{ id: "chen", label: "Boris Chen", available: true }]);
   const [state, setState] = useState<PersistedUiState>(initialState);
   const [ready, setReady] = useState(false);
   const [search, setSearch] = useState("");
@@ -295,7 +309,15 @@ export function DraftAssistant() {
     return [...slots].sort((a, b) => a - b);
   }
 
-  function applyPayload(payload: DraftPayload, message?: string) {
+  function draftApi(path: string) {
+    if (!draftId || path.includes("?")) return path;
+    if (path.startsWith("/api/draft") || path.startsWith("/api/draft/pick")) {
+      return `${path}?draftId=${encodeURIComponent(draftId)}`;
+    }
+    return path;
+  }
+
+  function applyPayload(payload: DraftPayload & { demo?: { role: "watch" | "play"; slot: number | null; roomId: string } }, message?: string) {
     const next = normalizePersisted({
       mode: payload.mode,
       draft: {
@@ -315,17 +337,23 @@ export function DraftAssistant() {
     setMe(payload.me);
     setMembers(payload.members);
     if (payload.leagueKey) setLeagueKey(payload.leagueKey);
+    if (payload.demo) {
+      setDraftId(payload.demo.roomId);
+      setDemoRole(payload.demo.role);
+    }
     if (message) setNotice(message);
   }
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/draft")
+    const boot = isDemo ? "/api/demo" : "/api/draft";
+    fetch(boot)
       .then((response) => (response.ok ? response.json() : null))
-      .then((payload: DraftPayload | null) => {
+      .then((payload: (DraftPayload & { demo?: { role: "watch" | "play"; slot: number | null; roomId: string } }) | null) => {
         if (cancelled) return;
         if (payload?.draft && payload.players && payload.me) {
-          applyPayload(payload, "Loaded shared draft board");
+          if (payload.demo) setDraftId(payload.demo.roomId);
+          applyPayload(payload, isDemo ? "Demo room ready" : "Loaded shared draft board");
         } else {
           setState(hydrate());
         }
@@ -339,12 +367,24 @@ export function DraftAssistant() {
     return () => {
       cancelled = true;
     };
+  }, [isDemo]);
+
+  useEffect(() => {
+    fetch("/api/rankings?list=sources")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { sources?: Array<{ id: string; label: string; available: boolean }> } | null) => {
+        if (body?.sources?.length) setRankingSources(body.sources);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
     if (!ready) return;
+    const path = draftId
+      ? `/api/draft?draftId=${encodeURIComponent(draftId)}`
+      : "/api/draft";
     const timer = window.setInterval(() => {
-      fetch("/api/draft", { cache: "no-store" })
+      fetch(path, { cache: "no-store" })
         .then((response) => (response.ok ? response.json() : null))
         .then((payload: DraftPayload | null) => {
           if (!payload?.updatedAt || payload.updatedAt === stateRef.current.updatedAt) return;
@@ -353,7 +393,7 @@ export function DraftAssistant() {
         .catch(() => undefined);
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [ready]);
+  }, [ready, draftId]);
 
   useEffect(() => {
     fetch("/api/yahoo/status")
@@ -382,6 +422,7 @@ export function DraftAssistant() {
     if (!ready || !me) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     const timeout = window.setTimeout(() => {
+      if (isDemo) return;
       fetch("/api/me", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -396,7 +437,7 @@ export function DraftAssistant() {
       }).catch(() => undefined);
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [ready, state.draft.userSlot, state.pins, state.avoids, state.weights, dark, me]);
+  }, [ready, isDemo, state, state.draft.userSlot, state.pins, state.avoids, state.weights, dark, me]);
 
   const current = selectionForOverall(state.draft.picks.length + 1);
   const nextMine = nextSelectionForSlot(
@@ -425,8 +466,8 @@ export function DraftAssistant() {
   }, [draftComplete, state.leagueKey, state.draft.picks.length]);
   useEffect(() => {
     document.title = isMyTurn
-      ? "🚨 YOUR PICK — Conroy's AI Draft Dojo"
-      : "Conroy's AI Draft Dojo";
+      ? "🚨 YOUR PICK — Draft Dojo"
+      : "Draft Dojo";
   }, [isMyTurn]);
   // Tick once a second only while an auto-draft deadline is pending, so the
   // countdown updates without re-rendering the board the rest of the time.
@@ -519,7 +560,7 @@ export function DraftAssistant() {
     body: Record<string, unknown>,
     message: string,
   ) {
-    const response = await fetch(path, {
+    const response = await fetch(draftApi(path), {
       method: path.includes("/pick") ? "POST" : "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -915,15 +956,15 @@ export function DraftAssistant() {
     );
   }
 
-  async function fetchChen(scoring: ChenScoring) {
+  async function fetchRankings(source: string, scoring: ChenScoring) {
     if (chenBusy) return;
     setChenBusy(true);
-    setNotice(`Loading Boris Chen ${CHEN_SCORING[scoring].label}…`);
+    setNotice(`Loading ${source} ${CHEN_SCORING[scoring].label}…`);
     try {
-      const response = await fetch(`/api/chen?scoring=${scoring}`);
+      const response = await fetch(`/api/rankings?source=${source}&scoring=${scoring}`);
       const parsed = await response.json();
       if (!response.ok) throw new Error(parsed.error ?? "Import failed");
-      if (!parsed.players?.length) throw new Error("Chen import contained no players");
+      if (!parsed.players?.length) throw new Error("Import contained no players");
       await mutateDraft(
         "/api/draft",
         { action: "chen", chen: parsed },
@@ -931,11 +972,24 @@ export function DraftAssistant() {
       );
     } catch (error) {
       setNotice(
-        `${error instanceof Error ? error.message : "Chen fetch failed"}. Try again or import a CSV.`,
+        `${error instanceof Error ? error.message : "Rankings fetch failed"}. Try again or import a CSV.`,
       );
     } finally {
       setChenBusy(false);
     }
+  }
+
+  async function joinDemo() {
+    const response = await fetch("/api/demo/join", { method: "POST" });
+    const payload = (await response.json()) as DraftPayload & {
+      error?: string;
+      demo?: { role: "watch" | "play"; slot: number | null; roomId: string };
+    };
+    if (!response.ok || !payload.draft) {
+      setNotice(payload.error ?? "Could not join the demo");
+      return;
+    }
+    applyPayload(payload, `Joined as seat ${payload.demo?.slot ?? "?"}`);
   }
 
   const selectedPlayer =
@@ -991,11 +1045,10 @@ export function DraftAssistant() {
     return () => {
       cancelled = true;
     };
-  }, [detailPlayer?.id, detailPlayer?.name, detailPlayer?.position]);
+  }, [detailPlayer]);
 
-  const isAdmin = me?.role === "admin";
+  const isAdmin = !isDemo && me?.role === "admin";
   const adminView = isAdmin && !previewMember;
-  const pendingCount = adminUsers.filter((user) => user.status === "pending").length;
   // A practice mock runs on a "mock." league key (robots + auto-advance); a
   // manual mock uses mode "mock". Either way the admin may want a one-click
   // restart without hunting through the "Start a draft…" launcher.
@@ -1050,20 +1103,27 @@ export function DraftAssistant() {
           <Image
             className="brand-mark"
             src="https://raw.githubusercontent.com/dconroy/ai-fantasy-football/main/image%20%2814%29.png"
-            alt="Full Contact fantasy football league"
+            alt="Draft Dojo"
             width={58}
             height={58}
             unoptimized
             priority
           />
           <div className="brand-copy">
-            <p className="eyebrow">Cobra Kai · Full Contact · 2026</p>
-            <h1>Conroy&apos;s AI Draft Dojo</h1>
-            <p className="brand-tagline">Strike first. Draft smart. Show no mercy.</p>
+            <p className="eyebrow">{isDemo ? "Public demo · dojo.football" : "dojo.football"}</p>
+            <h1>Draft Dojo</h1>
+            <p className="brand-tagline">Recalculates your top five after every pick.</p>
           </div>
         </div>
         <div className="status-row">
-          <a className="status" href="/weekly">Weekly HQ</a>
+          {!isDemo ? <Link className="status" href="/weekly">Weekly HQ</Link> : (
+            <Link className="status" href="/">Home</Link>
+          )}
+          {isDemo && demoRole !== "play" ? (
+            <button className="live-button" onClick={() => void joinDemo()}>
+              Join this draft
+            </button>
+          ) : null}
           <span className={`status ${state.mode === "mock" ? "simulation" : "live"}`}>
             ●{" "}
             {state.mode === "mock"
@@ -1072,7 +1132,7 @@ export function DraftAssistant() {
                 ? "Practice mock"
                 : "Live board"}
           </span>
-          {yahooConnected ? (
+          {isDemo ? null : yahooConnected ? (
             <span className="status connected">
               ● {me?.displayName ?? "Yahoo"} signed in
             </span>
@@ -1089,14 +1149,9 @@ export function DraftAssistant() {
                   setPreviewMember(false);
                   setAdminOpen(true);
                 }}
-                title={
-                  pendingCount
-                    ? `${pendingCount} member${pendingCount === 1 ? "" : "s"} awaiting approval`
-                    : "Approve members, assign slots, and manage sync"
-                }
+                title="Assign slots and manage sync"
               >
                 League admin
-                {pendingCount > 0 ? <i>{pendingCount}</i> : null}
               </button>
               <button
                 className={`icon-button ${previewMember ? "preview-active" : ""}`}
@@ -1136,6 +1191,7 @@ export function DraftAssistant() {
           Draft slot
           <select
             value={state.draft.userSlot}
+            disabled={isDemo}
             onChange={(event) =>
               setState((previous) => ({
                 ...previous,
@@ -1228,11 +1284,7 @@ export function DraftAssistant() {
               {member.teamName || member.displayName}
               {member.draftSlot ? ` · slot ${member.draftSlot}` : ""}
               <small>
-                {member.status === "pending"
-                  ? "awaiting approval"
-                  : isMe
-                    ? "you"
-                    : presence.label}
+                {isMe ? "you" : presence.label}
               </small>
             </span>
           );
@@ -1338,11 +1390,7 @@ export function DraftAssistant() {
                   <p className="eyebrow">Only you see this</p>
                   <h2 id="admin-overlay-title">League admin</h2>
                 </div>
-                <span>
-                  {pendingCount
-                    ? `${pendingCount} awaiting approval`
-                    : "all members approved"}
-                </span>
+                <span>{adminUsers.length} members</span>
                 <button className="icon-button" onClick={() => setAdminOpen(false)}>
                   Close
                 </button>
@@ -1355,22 +1403,8 @@ export function DraftAssistant() {
                     <div className="admin-member-head">
                       <strong>{user.displayName}</strong>
                       <span className={`member-status ${user.status}`}>
-                        {user.role === "admin" ? "admin" : user.status}
+                        {user.role === "admin" ? "admin" : "member"}
                       </span>
-                      {user.status === "pending" ? (
-                        <button onClick={() => patchUser(user.id, { status: "active" })}>
-                          Approve
-                        </button>
-                      ) : (
-                        user.role !== "admin" && (
-                          <button
-                            className="secondary"
-                            onClick={() => patchUser(user.id, { status: "pending" })}
-                          >
-                            Revoke
-                          </button>
-                        )
-                      )}
                     </div>
                     <div className="admin-member-fields">
                       <label>
@@ -1672,7 +1706,11 @@ export function DraftAssistant() {
                 ? insightFlags
                   ? `${insightFlags} alert${insightFlags === 1 ? "" : "s"}`
                   : "no flags"
-                : `${recommendation.picksUntilFollowingSelection ?? "—"} until following turn`}
+                : draftComplete
+                  ? "draft complete"
+                  : recommendation.picksUntilFollowingSelection === null
+                    ? "last pick"
+                    : `${recommendation.picksUntilFollowingSelection} until following turn`}
             </span>
           </div>
           <div className="reco-tabs" role="tablist">
@@ -1732,6 +1770,13 @@ export function DraftAssistant() {
             </div>
           ) : (
           <>
+          {recommendation.recommendations.length === 0 ? (
+            <p className="insight-empty">
+              {draftComplete
+                ? "Your picks are in. Open the report card for the room grades."
+                : "No remaining players fit the board — check Best available."}
+            </p>
+          ) : null}
           {recommendation.recommendations.map((item, index) => (
             <article
               key={item.player.id}
@@ -1792,14 +1837,34 @@ export function DraftAssistant() {
               {!state.source?.startsWith("Built-in") && " · auto-updated"}
             </p>
             <label className="scoring-toggle">
-              Chen list
+              Expert
+              <select
+                value={sourceFromBoard(state.source)}
+                disabled={chenBusy}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  if (next === sourceFromBoard(state.source)) return;
+                  void fetchRankings(next, scoringFromSource(state.source));
+                }}
+              >
+                {rankingSources
+                  .filter((source) => source.available)
+                  .map((source) => (
+                    <option key={source.id} value={source.id}>
+                      {source.label}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="scoring-toggle">
+              Scoring
               <select
                 value={scoringFromSource(state.source)}
                 disabled={chenBusy}
                 onChange={(event) => {
                   const next = event.target.value as ChenScoring;
                   if (next === scoringFromSource(state.source)) return;
-                  void fetchChen(next);
+                  void fetchRankings(sourceFromBoard(state.source), next);
                 }}
               >
                 {(Object.keys(CHEN_SCORING) as ChenScoring[]).map((value) => (
