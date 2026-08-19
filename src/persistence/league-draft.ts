@@ -468,6 +468,9 @@ export async function resetSharedDraft(
   leagueKey?: string | null,
   draftId = LEAGUE_DRAFT_ID,
 ): Promise<SharedDraft> {
+  // A brand-new draft starts every manager's pins and avoids from scratch — they
+  // target a specific board, so they shouldn't bleed across drafts.
+  await prisma.user.updateMany({ data: { pinsJson: "[]", avoidsJson: "[]" } });
   return saveSharedDraft({
     draftId,
     mode,

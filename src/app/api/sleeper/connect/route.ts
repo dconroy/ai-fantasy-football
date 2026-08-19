@@ -32,7 +32,15 @@ export async function POST(request: Request) {
     if (!found) {
       return NextResponse.json({ error: "Sleeper user not found" }, { status: 404 });
     }
-    return NextResponse.json(found);
+    return NextResponse.json({
+      user: {
+        userId: found.userId,
+        username: found.username,
+        displayName: found.displayName,
+      },
+      leagues: found.leagues,
+      drafts: found.drafts,
+    });
   }
 
   const userId = body.userId?.trim();

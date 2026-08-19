@@ -333,11 +333,20 @@ export function DraftAssistant({
   }
 
   function applyPayload(payload: DraftPayload & { demo?: { role: "watch" | "play"; slot: number | null; roomId: string; takenSlots?: number[] } }, message?: string) {
+    // Spectators (demo "watch") report draftSlot 0 — no seat. Clamp any invalid
+    // slot to a real one so snake math (nextSelectionForSlot, recommendations)
+    // never throws "slot must be between 1 and N" and crashes the whole page.
+    const teamCount = payload.draft.teamCount ?? 12;
+    const rawSlot = payload.me.draftSlot;
+    const safeUserSlot =
+      Number.isInteger(rawSlot) && rawSlot >= 1 && rawSlot <= teamCount
+        ? rawSlot
+        : 1;
     const next = normalizePersisted({
       mode: payload.mode,
       draft: {
         ...payload.draft,
-        userSlot: payload.me.draftSlot,
+        userSlot: safeUserSlot,
       },
       players: payload.players,
       importedAt: payload.importedAt,
