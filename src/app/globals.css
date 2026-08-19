@@ -993,6 +993,18 @@ h2 {
   text-decoration-thickness: 1.5px;
 }
 
+.table-row.taken {
+  opacity: .55;
+}
+
+.empty-filter {
+  margin: 0;
+  padding: 22px 14px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .row-actions {
   justify-content: flex-end;
 }

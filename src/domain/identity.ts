@@ -145,3 +145,42 @@ export function resolvePlayerIdentity(
   }
   return { status: "notFound", normalizedQuery };
 }
+
+/**
+ * Map saved pin/avoid ids onto the current player pool. Chen list swaps and
+ * metadata backfill can change a row's id while the name + position stay put.
+ */
+export function resolveTrackedPlayerIds(
+  ids: readonly string[],
+  players: readonly Player[],
+): string[] {
+  const byId = new Map(players.map((player) => [player.id, player.id]));
+  const byChen = new Map(
+    players.map((player) => [
+      `chen:${player.position}:${player.name.toLowerCase()}`,
+      player.id,
+    ]),
+  );
+  const byKey = new Map(
+    players.map((player) => [
+      `${normalizePlayerName(player.name)}|${player.position}`,
+      player.id,
+    ]),
+  );
+
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    const chen = /^chen:([^:]+):(.+)$/i.exec(id);
+    const next =
+      byId.get(id) ??
+      (chen
+        ? byChen.get(`chen:${chen[1].toUpperCase()}:${chen[2].toLowerCase()}`) ??
+          byKey.get(`${normalizePlayerName(chen[2])}|${chen[1].toUpperCase()}`)
+        : undefined);
+    if (!next || seen.has(next)) continue;
+    seen.add(next);
+    resolved.push(next);
+  }
+  return resolved;
+}

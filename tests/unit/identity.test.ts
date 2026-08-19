@@ -4,6 +4,7 @@ import {
   normalizePlayerName,
   normalizeTeam,
   resolvePlayerIdentity,
+  resolveTrackedPlayerIds,
   type Player,
 } from "../../src/domain";
 
@@ -103,5 +104,16 @@ describe("player identity resolution", () => {
       status: "notFound",
       normalizedQuery: "unknown player",
     });
+  });
+});
+
+describe("resolveTrackedPlayerIds", () => {
+  it("rewrites stale Chen ids onto the current player row", () => {
+    expect(
+      resolveTrackedPlayerIds(
+        ["chen:WR:a.j. brown", "missing"],
+        players,
+      ),
+    ).toEqual(["aj-brown"]);
   });
 });

@@ -10,6 +10,7 @@ import {
   makeManualPick,
   nextSelectionForSlot,
   recommendPlayers,
+  resolveTrackedPlayerIds,
   rosterPicks,
   selectionForOverall,
   type DraftState,
@@ -27,6 +28,7 @@ import {
 } from "@/adapters/chen/boris-chen";
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
 import { resolvePlayerIdentity } from "@/domain/identity";
+import { formatStamp } from "@/lib/build-info";
 
 interface RemoteDraftPick {
   pick: number;
@@ -429,7 +431,14 @@ export function DraftAssistant() {
     () => availablePlayers(state.draft, state.players),
     [state.draft, state.players],
   );
-  const avoids = useMemo(() => state.avoids ?? [], [state.avoids]);
+  const avoids = useMemo(
+    () => resolveTrackedPlayerIds(state.avoids ?? [], state.players),
+    [state.avoids, state.players],
+  );
+  const draftedIds = useMemo(
+    () => new Set(state.draft.picks.map((pick) => pick.player.id)),
+    [state.draft.picks],
+  );
   const recommendation = useMemo(
     () =>
       recommendPlayers(state.draft, state.players, {
@@ -460,7 +469,7 @@ export function DraftAssistant() {
   const tiers = [...new Set(available.map((player) => player.chenTier))]
     .filter((value): value is number => value !== undefined)
     .sort((a, b) => a - b);
-  const filtered = available
+  const filtered = (avoidFilter === "only" ? state.players : available)
     .filter((player) => position === "ALL" || player.position === position)
     .filter((player) => tier === "ALL" || player.chenTier === Number(tier))
     .filter((player) =>
@@ -838,7 +847,7 @@ export function DraftAssistant() {
 
   function toggleList(key: "pins" | "avoids", id: string) {
     setState((previous) => {
-      const current = previous[key] ?? [];
+      const current = resolveTrackedPlayerIds(previous[key] ?? [], previous.players);
       const next = current.includes(id)
         ? current.filter((value) => value !== id)
         : [...current, id];
@@ -1736,7 +1745,7 @@ export function DraftAssistant() {
           </div>
           <div className="data-source">
             <p>
-              {state.source} · {state.importedAt}
+              {state.source} · {formatStamp(state.importedAt)}
               {!state.source?.startsWith("Built-in") && " · auto-updated"}
             </p>
             <label className="scoring-toggle">
@@ -1785,9 +1794,18 @@ export function DraftAssistant() {
             <div className="table-row table-head" role="row">
               <span>Rank</span><span>Player</span><span>Tier</span><span>ADP</span><span>Actions</span>
             </div>
+            {filtered.length === 0 && (
+              <p className="empty-filter">
+                {avoidFilter === "only"
+                  ? avoids.length
+                    ? "Those avoided players are not in the current list."
+                    : "You have not avoided anyone yet."
+                  : "No players match these filters."}
+              </p>
+            )}
             {filtered.slice(0, 80).map((player) => (
               <div
-                className={`table-row ${selected === player.id ? "selected" : ""} ${avoids.includes(player.id) ? "avoided" : ""}`}
+                className={`table-row ${selected === player.id ? "selected" : ""} ${avoids.includes(player.id) ? "avoided" : ""} ${draftedIds.has(player.id) ? "taken" : ""}`}
                 key={player.id}
                 onClick={() => openDetail(player.id)}
                 role="row"
@@ -1812,8 +1830,11 @@ export function DraftAssistant() {
                   <button onClick={(event) => { event.stopPropagation(); toggleList("avoids", player.id); }}>
                     {avoids.includes(player.id) ? "Allow" : "Avoid"}
                   </button>
-                  <button onClick={(event) => { event.stopPropagation(); markDrafted(player); }}>
-                    Drafted
+                  <button
+                    disabled={draftedIds.has(player.id)}
+                    onClick={(event) => { event.stopPropagation(); markDrafted(player); }}
+                  >
+                    {draftedIds.has(player.id) ? "Taken" : "Drafted"}
                   </button>
                 </span>
               </div>

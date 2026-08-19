@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { formatStamp } from "@/lib/build-info";
 
 interface LineupPlayerDto {
   id: string;
@@ -635,7 +636,7 @@ export function WeeklyHq() {
 
           <p className="weekly-meta">
             Yahoo synced {new Date(data.syncedAt).toLocaleTimeString()} · Chen data{" "}
-            {data.chen.importedAt} (auto-refreshes every 3 days)
+            {formatStamp(data.chen.importedAt)} (auto-refreshes every 3 days)
           </p>
         </>
       )}
