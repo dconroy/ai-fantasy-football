@@ -243,7 +243,7 @@ export function DraftAssistant() {
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState<Position | "ALL">("ALL");
   const [tier, setTier] = useState("ALL");
-  const [avoidFilter, setAvoidFilter] = useState<"all" | "only">("all");
+  const [listFilter, setListFilter] = useState<"all" | "avoids" | "pins">("all");
   const [recoTab, setRecoTab] = useState<"top" | "insights">("top");
   const [selected, setSelected] = useState<string | null>(null);
   const [syncPaused, setSyncPaused] = useState(false);
@@ -453,6 +453,10 @@ export function DraftAssistant() {
     () => resolveTrackedPlayerIds(state.avoids ?? [], state.players),
     [state.avoids, state.players],
   );
+  const pins = useMemo(
+    () => resolveTrackedPlayerIds(state.pins ?? [], state.players),
+    [state.pins, state.players],
+  );
   const draftedIds = useMemo(
     () => new Set(state.draft.picks.map((pick) => pick.player.id)),
     [state.draft.picks],
@@ -487,17 +491,22 @@ export function DraftAssistant() {
   const tiers = [...new Set(available.map((player) => player.chenTier))]
     .filter((value): value is number => value !== undefined)
     .sort((a, b) => a - b);
-  const filtered = (avoidFilter === "only" ? state.players : available)
+  const filtered = (listFilter === "all" ? available : state.players)
     .filter((player) => position === "ALL" || player.position === position)
     .filter((player) => tier === "ALL" || player.chenTier === Number(tier))
     .filter((player) =>
       `${player.name} ${player.team}`.toLowerCase().includes(search.toLowerCase()),
     )
-    .filter((player) => avoidFilter !== "only" || avoids.includes(player.id))
+    .filter((player) =>
+      listFilter === "all"
+        ? true
+        : listFilter === "avoids"
+          ? avoids.includes(player.id)
+          : pins.includes(player.id),
+    )
     .sort((a, b) => {
       const pinDelta =
-        Number((state.pins ?? []).includes(b.id)) -
-        Number((state.pins ?? []).includes(a.id));
+        Number(pins.includes(b.id)) - Number(pins.includes(a.id));
       return (
         pinDelta ||
         (a.chenRank ?? Number.MAX_SAFE_INTEGER) -
@@ -1815,11 +1824,16 @@ export function DraftAssistant() {
               {tiers.map((value) => <option key={value} value={value}>Tier {value}</option>)}
             </select>
             <select
-              value={avoidFilter}
-              onChange={(event) => setAvoidFilter(event.target.value as "all" | "only")}
+              value={listFilter}
+              onChange={(event) =>
+                setListFilter(event.target.value as "all" | "avoids" | "pins")
+              }
             >
               <option value="all">All</option>
-              <option value="only">
+              <option value="pins">
+                Pins{pins.length ? ` (${pins.length})` : ""}
+              </option>
+              <option value="avoids">
                 Avoids{avoids.length ? ` (${avoids.length})` : ""}
               </option>
             </select>
@@ -1830,11 +1844,15 @@ export function DraftAssistant() {
             </div>
             {filtered.length === 0 && (
               <p className="empty-filter">
-                {avoidFilter === "only"
+                {listFilter === "avoids"
                   ? avoids.length
                     ? "Those avoided players are not in the current list."
                     : "You have not avoided anyone yet."
-                  : "No players match these filters."}
+                  : listFilter === "pins"
+                    ? pins.length
+                      ? "Those pinned players are not in the current list."
+                      : "You have not pinned anyone yet."
+                    : "No players match these filters."}
               </p>
             )}
             {filtered.slice(0, 80).map((player) => (
