@@ -1625,6 +1625,11 @@ export function DraftAssistant() {
                         <span>{pick.round}.{pick.slot}</span>
                         <b>{pick.player.name}</b>
                         <small>{pick.player.position}</small>
+                        <PlayerAvatar
+                          name={pick.player.name}
+                          imageUrl={pick.player.imageUrl}
+                          size={28}
+                        />
                       </div>
                     ) : (
                       <div className="board-pick empty">
