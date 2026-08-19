@@ -237,6 +237,7 @@ export function DraftAssistant() {
   const [selected, setSelected] = useState<string | null>(null);
   const [syncPaused, setSyncPaused] = useState(false);
   const [previewMember, setPreviewMember] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const [dark, setDark] = useState(false);
   const [yahooConnected, setYahooConnected] = useState(false);
   const [notice, setNotice] = useState("Simulation ready");
@@ -954,13 +955,30 @@ export function DraftAssistant() {
             </a>
           )}
           {isAdmin && (
-            <button
-              className={`icon-button ${previewMember ? "preview-active" : ""}`}
-              onClick={() => setPreviewMember((value) => !value)}
-              title="Preview the app the way a regular member sees it"
-            >
-              {previewMember ? "Exit member view" : "View as member"}
-            </button>
+            <>
+              <button
+                className="icon-button admin-open"
+                onClick={() => {
+                  setPreviewMember(false);
+                  setAdminOpen(true);
+                }}
+                title={
+                  pendingCount
+                    ? `${pendingCount} member${pendingCount === 1 ? "" : "s"} awaiting approval`
+                    : "Approve members, assign slots, and manage sync"
+                }
+              >
+                League admin
+                {pendingCount > 0 ? <i>{pendingCount}</i> : null}
+              </button>
+              <button
+                className={`icon-button ${previewMember ? "preview-active" : ""}`}
+                onClick={() => setPreviewMember((value) => !value)}
+                title="Preview the app the way a regular member sees it"
+              >
+                {previewMember ? "Exit member view" : "View as member"}
+              </button>
+            </>
           )}
           <form action="/api/auth/logout" method="post">
             <button className="icon-button" type="submit">Sign out</button>
@@ -1158,6 +1176,161 @@ export function DraftAssistant() {
                 </button>
               </article>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isAdmin && adminOpen && (
+        <div className="launcher-overlay" onClick={() => setAdminOpen(false)}>
+          <div
+            className="launcher admin-overlay"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-overlay-title"
+          >
+            <section className="panel admin-console">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Only you see this</p>
+                  <h2 id="admin-overlay-title">League admin</h2>
+                </div>
+                <span>
+                  {pendingCount
+                    ? `${pendingCount} awaiting approval`
+                    : "all members approved"}
+                </span>
+                <button className="icon-button" onClick={() => setAdminOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              <div className="admin-section">
+                <p className="admin-label">Members</p>
+                {adminUsers.map((user) => (
+                  <div className="admin-member" key={user.id}>
+                    <div className="admin-member-head">
+                      <strong>{user.displayName}</strong>
+                      <span className={`member-status ${user.status}`}>
+                        {user.role === "admin" ? "admin" : user.status}
+                      </span>
+                      {user.status === "pending" ? (
+                        <button onClick={() => patchUser(user.id, { status: "active" })}>
+                          Approve
+                        </button>
+                      ) : (
+                        user.role !== "admin" && (
+                          <button
+                            className="secondary"
+                            onClick={() => patchUser(user.id, { status: "pending" })}
+                          >
+                            Revoke
+                          </button>
+                        )
+                      )}
+                    </div>
+                    <div className="admin-member-fields">
+                      <label>
+                        Slot
+                        <select
+                          value={user.draftSlot ?? ""}
+                          onChange={(event) =>
+                            patchUser(user.id, {
+                              draftSlot: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            })
+                          }
+                        >
+                          <option value="">—</option>
+                          {Array.from({ length: 12 }, (_, index) => (
+                            <option key={index + 1} value={index + 1}>
+                              {index + 1}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Team
+                        <input
+                          type="text"
+                          defaultValue={user.teamName ?? ""}
+                          placeholder="Team name"
+                          onBlur={(event) => {
+                            const value = event.target.value.trim();
+                            if (value !== (user.teamName ?? "")) {
+                              patchUser(user.id, { teamName: value || null });
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ))}
+                {adminUsers.length <= 1 && (
+                  <p className="admin-hint">
+                    Friends show up here after they sign in with Yahoo.
+                    Approve them to unlock the board.
+                  </p>
+                )}
+              </div>
+
+              <div className="admin-section">
+                <p className="admin-label">Advanced: practice robots &amp; live sync</p>
+                <div className="sync-panel">
+                  <label>
+                    League key
+                    <input
+                      type="text"
+                      placeholder="mock.abc123 or 461.l.12345"
+                      value={leagueKey}
+                      onChange={(event) => setLeagueKey(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Poll every
+                    <select
+                      value={syncIntervalSec}
+                      onChange={(event) => setSyncIntervalSec(Number(event.target.value))}
+                    >
+                      {[3, 5, 8, 15, 30].map((value) => (
+                        <option key={value} value={value}>
+                          {value}s
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="sync-actions">
+                    <button className="secondary" onClick={startMockHarness}>
+                      Start practice mock
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={async () => {
+                        if (!leagueKey.trim()) return;
+                        await fetch(
+                          `/api/yahoo/mock?leagueKey=${encodeURIComponent(leagueKey.trim())}`,
+                          { method: "DELETE" },
+                        );
+                        setNotice(`Stopped mock ${leagueKey}.`);
+                        setSyncStatus("idle");
+                      }}
+                    >
+                      Stop mock
+                    </button>
+                  </div>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={syncPaused}
+                      onChange={(event) => setSyncPaused(event.target.checked)}
+                    />
+                    Pause live synchronization
+                  </label>
+                  <p className="sync-status">Status: {syncStatus}</p>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       )}
@@ -1547,148 +1720,6 @@ export function DraftAssistant() {
               what your league-mates see.
             </p>
           </section>
-
-          {adminView && (
-            <section className="panel admin-console">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Only you see this</p>
-                  <h2>League admin</h2>
-                </div>
-                <span>
-                  {pendingCount
-                    ? `${pendingCount} awaiting approval`
-                    : "all members approved"}
-                </span>
-              </div>
-
-              <div className="admin-section">
-                <p className="admin-label">Members</p>
-                {adminUsers.map((user) => (
-                  <div className="admin-member" key={user.id}>
-                    <div className="admin-member-head">
-                      <strong>{user.displayName}</strong>
-                      <span className={`member-status ${user.status}`}>
-                        {user.role === "admin" ? "admin" : user.status}
-                      </span>
-                      {user.status === "pending" ? (
-                        <button onClick={() => patchUser(user.id, { status: "active" })}>
-                          Approve
-                        </button>
-                      ) : (
-                        user.role !== "admin" && (
-                          <button
-                            className="secondary"
-                            onClick={() => patchUser(user.id, { status: "pending" })}
-                          >
-                            Revoke
-                          </button>
-                        )
-                      )}
-                    </div>
-                    <div className="admin-member-fields">
-                      <label>
-                        Slot
-                        <select
-                          value={user.draftSlot ?? ""}
-                          onChange={(event) =>
-                            patchUser(user.id, {
-                              draftSlot: event.target.value
-                                ? Number(event.target.value)
-                                : null,
-                            })
-                          }
-                        >
-                          <option value="">—</option>
-                          {Array.from({ length: 12 }, (_, index) => (
-                            <option key={index + 1} value={index + 1}>
-                              {index + 1}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Team
-                        <input
-                          type="text"
-                          defaultValue={user.teamName ?? ""}
-                          placeholder="Team name"
-                          onBlur={(event) => {
-                            const value = event.target.value.trim();
-                            if (value !== (user.teamName ?? "")) {
-                              patchUser(user.id, { teamName: value || null });
-                            }
-                          }}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                ))}
-                {adminUsers.length <= 1 && (
-                  <p className="admin-hint">
-                    Friends show up here after they sign in with Yahoo.
-                    Approve them to unlock the board.
-                  </p>
-                )}
-              </div>
-
-              <div className="admin-section">
-                <p className="admin-label">Advanced: practice robots &amp; live sync</p>
-                <div className="sync-panel">
-                  <label>
-                    League key
-                    <input
-                      type="text"
-                      placeholder="mock.abc123 or 461.l.12345"
-                      value={leagueKey}
-                      onChange={(event) => setLeagueKey(event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Poll every
-                    <select
-                      value={syncIntervalSec}
-                      onChange={(event) => setSyncIntervalSec(Number(event.target.value))}
-                    >
-                      {[3, 5, 8, 15, 30].map((value) => (
-                        <option key={value} value={value}>
-                          {value}s
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="sync-actions">
-                    <button className="secondary" onClick={startMockHarness}>
-                      Start practice mock
-                    </button>
-                    <button
-                      className="secondary"
-                      onClick={async () => {
-                        if (!leagueKey.trim()) return;
-                        await fetch(
-                          `/api/yahoo/mock?leagueKey=${encodeURIComponent(leagueKey.trim())}`,
-                          { method: "DELETE" },
-                        );
-                        setNotice(`Stopped mock ${leagueKey}.`);
-                        setSyncStatus("idle");
-                      }}
-                    >
-                      Stop mock
-                    </button>
-                  </div>
-                  <label className="toggle">
-                    <input
-                      type="checkbox"
-                      checked={syncPaused}
-                      onChange={(event) => setSyncPaused(event.target.checked)}
-                    />
-                    Pause live synchronization
-                  </label>
-                  <p className="sync-status">Status: {syncStatus}</p>
-                </div>
-              </div>
-            </section>
-          )}
         </aside>
       </section>
 
@@ -1724,7 +1755,11 @@ export function DraftAssistant() {
                     key={`${round}-${slot}`}
                   >
                     {pick ? (
-                      <div className={`board-pick pos-${pick.player.position.toLowerCase()}`}>
+                      <button
+                        type="button"
+                        className={`board-pick pos-${pick.player.position.toLowerCase()}`}
+                        onClick={() => openDetail(pick.player.id)}
+                      >
                         <span>
                           {pick.round}.{pick.slot}
                           {pick.player.byeWeek ? ` · W${pick.player.byeWeek}` : ""}
@@ -1736,7 +1771,7 @@ export function DraftAssistant() {
                           imageUrl={pick.player.imageUrl}
                           size={28}
                         />
-                      </div>
+                      </button>
                     ) : (
                       <div className="board-pick empty">
                         <span>{round}.{slot}</span>
