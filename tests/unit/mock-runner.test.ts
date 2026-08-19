@@ -153,6 +153,49 @@ describe("mock-runner", () => {
     expect(ids.filter((id) => id === "p1")).toHaveLength(1);
   });
 
+  it("takes a kicker and defense in the last two rounds", () => {
+    const skill = Array.from({ length: 40 }, (_, index) => ({
+      id: `s${index + 1}`,
+      name: `Skill ${index + 1}`,
+      position: (["RB", "WR", "QB", "TE"] as const)[index % 4],
+      team: "KC",
+      chenRank: index + 1,
+    }));
+    const specialists: MockPlayerSeed[] = [
+      ...[1, 2, 3].map((n) => ({
+        id: `k${n}`,
+        name: `Kicker ${n}`,
+        position: "K" as const,
+        team: "KC",
+        chenRank: 200 + n,
+      })),
+      ...[1, 2, 3].map((n) => ({
+        id: `d${n}`,
+        name: `Defense ${n}`,
+        position: "DEF" as const,
+        team: "KC",
+        chenRank: 210 + n,
+      })),
+    ];
+    const humanPicks = skill.slice(0, 6).map((player) => player.id);
+    const base = config({
+      teamCount: 4,
+      rounds: 6,
+      humanSlots: [1],
+      picksBySlot: { 1: humanPicks },
+      players: [...skill, ...specialists],
+    });
+    const order = projectedDraftOrder(base);
+    expect(order).toHaveLength(24);
+    for (const slot of [2, 3, 4]) {
+      const roster = order.filter(
+        (_, index) => slotForOverall(index + 1, 4) === slot,
+      );
+      expect(roster.some((player) => player.position === "K")).toBe(true);
+      expect(roster.some((player) => player.position === "DEF")).toBe(true);
+    }
+  });
+
   it("does not auto-draft when the feature is disabled", () => {
     const base = config({ humanSlots: [1], picksBySlot: {} });
     expect(autoPickDeadline(base)).toBeNull();

@@ -74,6 +74,53 @@ const MAX_PER_POSITION: Record<MockPlayerSeed["position"], number> = {
   DEF: 2,
 };
 
+/** Don't touch K/DEF before this round; force the holes in the last N picks. */
+const SPECIALIST_OPEN_ROUND = 13;
+
+function missingSpecialists(
+  roster: Record<MockPlayerSeed["position"], number>,
+): Array<"K" | "DEF"> {
+  const missing: Array<"K" | "DEF"> = [];
+  if (roster.K === 0) missing.push("K");
+  if (roster.DEF === 0) missing.push("DEF");
+  return missing;
+}
+
+function chooseRobotPlayer(
+  sortable: readonly MockPlayerSeed[],
+  available: (player: MockPlayerSeed) => boolean,
+  roster: Record<MockPlayerSeed["position"], number>,
+  round: number,
+  rounds: number,
+): MockPlayerSeed | undefined {
+  const missing = missingSpecialists(roster);
+  const remainingRounds = rounds - round + 1;
+  const forced =
+    missing.length > 0 && remainingRounds <= missing.length ? missing : [];
+
+  const fitsCap = (player: MockPlayerSeed) =>
+    roster[player.position] < MAX_PER_POSITION[player.position];
+  const tooEarlySpecialist = (player: MockPlayerSeed) =>
+    (player.position === "K" || player.position === "DEF") &&
+    round < SPECIALIST_OPEN_ROUND;
+
+  if (forced.length > 0) {
+    for (const position of forced) {
+      const specialist = sortable.find(
+        (player) => available(player) && player.position === position,
+      );
+      if (specialist) return specialist;
+    }
+  }
+
+  return (
+    sortable.find(
+      (player) =>
+        available(player) && fitsCap(player) && !tooEarlySpecialist(player),
+    ) ?? sortable.find((player) => available(player))
+  );
+}
+
 /** Snake-order slot for a 1-indexed overall pick. */
 export function slotForOverall(overall: number, teamCount: number): number {
   const round = Math.ceil(overall / teamCount);
@@ -133,15 +180,13 @@ export function projectedDraftOrder(config: MockDraftConfig): MockPlayerSeed[] {
     }
 
     const roster = rosters[slot - 1];
-    const candidate = sortable.find((player) => {
-      if (!remaining.has(player.id)) return false;
-      if (roster[player.position] >= MAX_PER_POSITION[player.position]) return false;
-      if ((player.position === "K" || player.position === "DEF") && round < 12) {
-        return false;
-      }
-      return true;
-    });
-    const choice = candidate ?? sortable.find((player) => remaining.has(player.id));
+    const choice = chooseRobotPlayer(
+      sortable,
+      (player) => remaining.has(player.id),
+      roster,
+      round,
+      config.rounds,
+    );
     if (!choice) break;
     remaining.delete(choice.id);
     roster[choice.position] += 1;
@@ -323,15 +368,13 @@ export function autoPickPlayerId(config: MockDraftConfig): string | null {
       roster[player.position] += 1;
     }
   });
-  const candidate = sortable.find((player) => {
-    if (drafted.has(player.id)) return false;
-    if (roster[player.position] >= MAX_PER_POSITION[player.position]) return false;
-    if ((player.position === "K" || player.position === "DEF") && round < 12) {
-      return false;
-    }
-    return true;
-  });
-  const choice = candidate ?? sortable.find((player) => !drafted.has(player.id));
+  const choice = chooseRobotPlayer(
+    sortable,
+    (player) => !drafted.has(player.id),
+    roster,
+    round,
+    config.rounds,
+  );
   return choice?.id ?? null;
 }
 
