@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  analyzeDraftRoster,
   availablePlayers,
   createDraftState,
   makeManualPick,
@@ -232,6 +233,7 @@ export function DraftAssistant() {
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState<Position | "ALL">("ALL");
   const [tier, setTier] = useState("ALL");
+  const [recoTab, setRecoTab] = useState<"top" | "insights">("top");
   const [selected, setSelected] = useState<string | null>(null);
   const [syncPaused, setSyncPaused] = useState(false);
   const [previewMember, setPreviewMember] = useState(false);
@@ -421,6 +423,24 @@ export function DraftAssistant() {
     [state.draft, state.players, state.weights, avoids],
   );
   const myRoster = rosterPicks(state.draft.picks, state.draft.userSlot);
+  const insights = useMemo(
+    () =>
+      analyzeDraftRoster(myRoster, {
+        currentRound: current.round,
+        topPick: recommendation.recommendations[0]
+          ? {
+              name: recommendation.recommendations[0].player.name,
+              reason:
+                recommendation.recommendations[0].explanations[0] ??
+                "Best calculated value available",
+            }
+          : undefined,
+      }),
+    [myRoster, current.round, recommendation],
+  );
+  const insightFlags = insights.alerts.filter(
+    (alert) => alert.severity !== "info",
+  ).length;
   const tiers = [...new Set(available.map((player) => player.chenTier))]
     .filter((value): value is number => value !== undefined)
     .sort((a, b) => a - b);
@@ -1281,10 +1301,73 @@ export function DraftAssistant() {
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Calculated after every pick</p>
-              <h2>Top five</h2>
+              <h2>{recoTab === "insights" ? "Insights" : "Top five"}</h2>
             </div>
-            <span>{recommendation.picksUntilFollowingSelection ?? "—"} until following turn</span>
+            <span>
+              {recoTab === "insights"
+                ? insightFlags
+                  ? `${insightFlags} alert${insightFlags === 1 ? "" : "s"}`
+                  : "no flags"
+                : `${recommendation.picksUntilFollowingSelection ?? "—"} until following turn`}
+            </span>
           </div>
+          <div className="reco-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={recoTab === "top"}
+              className={recoTab === "top" ? "active" : ""}
+              onClick={() => setRecoTab("top")}
+            >
+              Top five
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={recoTab === "insights"}
+              className={recoTab === "insights" ? "active" : ""}
+              onClick={() => setRecoTab("insights")}
+            >
+              Insights
+              {insightFlags > 0 ? <i>{insightFlags}</i> : null}
+            </button>
+          </div>
+          {recoTab === "insights" ? (
+            <div className="insight-body">
+              {insights.alerts.length === 0 ? (
+                <p className="insight-empty">
+                  No notes yet — once you have a few picks, bye stacks and holes
+                  show up here.
+                </p>
+              ) : (
+                insights.alerts.map((alert) => (
+                  <article className={`insight-card ${alert.severity}`} key={alert.id}>
+                    <h3>{alert.title}</h3>
+                    <p>{alert.detail}</p>
+                  </article>
+                ))
+              )}
+              <div className="bye-board">
+                <h3>Your bye weeks</h3>
+                {insights.byes.length === 0 ? (
+                  <p className="insight-empty">No bye weeks on the roster yet.</p>
+                ) : (
+                  insights.byes.map((group) => (
+                    <div
+                      className={`bye-row ${group.count >= 3 ? "hot" : ""}`}
+                      key={group.week}
+                    >
+                      <strong>Week {group.week}</strong>
+                      <span>
+                        {group.count} · {group.names.join(", ")}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : (
+          <>
           {recommendation.recommendations.map((item, index) => (
             <article
               key={item.player.id}
@@ -1317,6 +1400,8 @@ export function DraftAssistant() {
                 </p>
               ))}
             </div>
+          )}
+          </>
           )}
           <button
             className="confirm"
@@ -1398,12 +1483,30 @@ export function DraftAssistant() {
         <aside className="right-column">
           <section className="panel roster">
             <div className="panel-heading"><h2>My roster</h2><span>{myRoster.length}/15</span></div>
+            {insights.byes.length > 0 && (
+              <div className="roster-byes">
+                {insights.byes.map((group) => (
+                  <span className={group.count >= 3 ? "hot" : ""} key={group.week}>
+                    W{group.week} · {group.count}
+                  </span>
+                ))}
+              </div>
+            )}
             {(["QB", "RB", "WR", "TE", "FLEX", "K", "DEF", "BENCH"] as const).map((slot) => {
               const picks = myRoster.filter((pick) => pick.rosterSlot === slot);
               return (
                 <div className="roster-slot" key={slot}>
                   <span>{slot}</span>
-                  <div>{picks.length ? picks.map((pick) => <strong key={pick.overall}>{pick.player.name}</strong>) : <em>Open</em>}</div>
+                  <div>
+                    {picks.length
+                      ? picks.map((entry) => (
+                          <strong key={entry.overall}>
+                            {entry.player.name}
+                            {entry.player.byeWeek ? ` · W${entry.player.byeWeek}` : ""}
+                          </strong>
+                        ))
+                      : <em>Open</em>}
+                  </div>
                 </div>
               );
             })}
@@ -1622,7 +1725,10 @@ export function DraftAssistant() {
                   >
                     {pick ? (
                       <div className={`board-pick pos-${pick.player.position.toLowerCase()}`}>
-                        <span>{pick.round}.{pick.slot}</span>
+                        <span>
+                          {pick.round}.{pick.slot}
+                          {pick.player.byeWeek ? ` · W${pick.player.byeWeek}` : ""}
+                        </span>
                         <b>{pick.player.name}</b>
                         <small>{pick.player.position}</small>
                         <PlayerAvatar
