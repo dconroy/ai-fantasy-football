@@ -101,7 +101,6 @@ On your own board (or the house league if you’re the admin):
 | Mode | What happens | When to use it |
 |---|---|---|
 | **Practice mock** | Robots take empty seats on a timer and pause at every human slot. | Group rehearsal |
-| **Manual mock** | Nothing moves until you press *Simulate to my pick* / *Advance one*. | Solo strategy |
 | **Draft night — live** | Follows a real Yahoo league key (or a connected Sleeper draft). | The actual draft |
 
 Practice mocks pause at every claimed seat. Unclaimed seats are robots. On the demo page, a human who doesn’t confirm in 30 seconds gets auto-drafted so the room keeps moving. That auto-draft does **not** happen on live draft night.

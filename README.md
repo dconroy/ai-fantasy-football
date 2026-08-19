@@ -56,19 +56,14 @@ lineup holes, bye logjams). The leaderboard ranks all twelve and expands to show
 <img src="docs/screenshots/report-card.png" alt="Draft report card: your team's graded hero panel plus a ranked A-to-C leaderboard" width="640" />
 </div>
 
-### Three ways to run a draft
+### Two ways to run a draft
 
 The admin starts a draft in one click. Practice mocks run the whole room on a timer;
-manual mocks are fully hand-driven; draft night follows your real Yahoo draft.
-
-<div align="center">
-<img src="docs/screenshots/start-a-draft.png" alt="Start-a-draft launcher with Practice mock, Manual mock, and Draft-night live modes" width="820" />
-</div>
+draft night follows your real Yahoo draft.
 
 | Mode | What happens | When to use it |
 |---|---|---|
 | **Practice mock** | Robots draft the open seats on a timer and **pause at every real manager's slot** until they confirm. Absent managers are auto-drafted a **complete** starting lineup after their clock expires. | A full group dress rehearsal |
-| **Manual mock** | Nothing moves until you press *Simulate to my pick* / *Advance one*. | Exploring strategy solo |
 | **Draft night — live** | The board follows your **real Yahoo draft** automatically and keeps recommendations fresh. | The actual draft |
 
 Robots draft with **slight, seeded preferences** (a deterministic per-team nudge) so opponents

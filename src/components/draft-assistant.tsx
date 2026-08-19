@@ -124,6 +124,14 @@ interface DraftPayload {
   me: MeState;
 }
 
+interface YahooLeagueChoice {
+  leagueKey: string;
+  name: string;
+  season?: number;
+  numTeams?: number;
+  draftStatus?: string;
+}
+
 const initialState: PersistedUiState = {
   mode: "mock",
   draft: createDraftState(1),
@@ -283,6 +291,9 @@ export function DraftAssistant({
   const reportSeenKey = useRef<string | null>(null);
   const reportAutoOpenReady = useRef(false);
   const [liveKeyDraft, setLiveKeyDraft] = useState("");
+  const [yahooLeagues, setYahooLeagues] = useState<YahooLeagueChoice[]>([]);
+  const [yahooLeaguesLoading, setYahooLeaguesLoading] = useState(false);
+  const [yahooLeaguesError, setYahooLeaguesError] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [playerBrief, setPlayerBrief] = useState<{
     season: number;
@@ -458,7 +469,26 @@ export function DraftAssistant({
       window.clearTimeout(timeout);
       timeout = window.setTimeout(() => {
         setDemoIdle(true);
-        setNotice("You went idle — your seat was released. Rejoin to keep drafting.");
+        if (!draftId) {
+          setNotice("You went idle — rejoin to keep drafting.");
+          return;
+        }
+        void fetch(
+          `/api/demo?room=${encodeURIComponent(draftId)}&join=1`,
+          { cache: "no-store" },
+        )
+          .then((response) => (response.ok ? response.json() : null))
+          .then((payload: DraftPayload | null) => {
+            if (payload?.draft && payload.players && payload.me) {
+              applyPayload(
+                payload,
+                "You went idle, so your seat was released. Choose an open seat to rejoin.",
+              );
+            }
+          })
+          .catch(() => {
+            setNotice("You went idle — rejoin to keep drafting.");
+          });
       }, IDLE_LIMIT_MS);
     };
     const onActivity = () => {
@@ -471,7 +501,7 @@ export function DraftAssistant({
       window.clearTimeout(timeout);
       for (const event of events) window.removeEventListener(event, onActivity);
     };
-  }, [isDemo, demoRole, demoIdle]);
+  }, [isDemo, demoRole, demoIdle, draftId]);
 
   useEffect(() => {
     fetch("/api/yahoo/status")
@@ -485,6 +515,47 @@ export function DraftAssistant({
     if (yahooResult === "denied") setNotice("Yahoo authorization was cancelled.");
     if (yahooResult === "error") setNotice("Yahoo authorization failed.");
   }, []);
+
+  useEffect(() => {
+    if (!launcherOpen || !yahooConnected || isDemo) return;
+    let cancelled = false;
+    setYahooLeaguesLoading(true);
+    setYahooLeaguesError("");
+    fetch("/api/yahoo/leagues", { cache: "no-store" })
+      .then(async (response) => {
+        const body = (await response.json().catch(() => null)) as {
+          leagues?: YahooLeagueChoice[];
+          error?: string;
+        } | null;
+        if (!response.ok) {
+          throw new Error(body?.error ?? "Could not load your Yahoo leagues.");
+        }
+        return body?.leagues ?? [];
+      })
+      .then((leagues) => {
+        if (cancelled) return;
+        setYahooLeagues(leagues);
+        if (leagues[0]?.leagueKey) {
+          setLiveKeyDraft((current) => current || leagues[0].leagueKey);
+        }
+        if (leagues.length === 0) {
+          setYahooLeaguesError("Yahoo returned no NFL leagues for this account.");
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setYahooLeaguesError(
+            error instanceof Error ? error.message : "Could not load your Yahoo leagues.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setYahooLeaguesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [launcherOpen, yahooConnected, isDemo]);
 
   useEffect(() => {
     if (me?.role !== "admin") return;
@@ -1521,19 +1592,6 @@ export function DraftAssistant({
               </article>
               <article>
                 <header>
-                  <h3>Manual mock</h3>
-                </header>
-                <p>
-                  Nothing happens on its own. You drive with “Simulate to my
-                  pick” and “Advance one”, and can record any pick by hand. Good
-                  for exploring strategies slowly.
-                </p>
-                <button className="secondary" onClick={() => void startSession("mock")}>
-                  Start manual mock
-                </button>
-              </article>
-              <article>
-                <header>
                   <h3>Draft night — live</h3>
                 </header>
                 <p>
@@ -1541,15 +1599,41 @@ export function DraftAssistant({
                   picks in the Yahoo app; this board syncs them automatically
                   and keeps recommendations current. Requires Yahoo API access.
                 </p>
-                <label className="launcher-key">
-                  League key
-                  <input
-                    type="text"
-                    placeholder="461.l.12345"
-                    value={liveKeyDraft}
-                    onChange={(event) => setLiveKeyDraft(event.target.value)}
-                  />
-                </label>
+                {yahooLeagues.length > 0 ? (
+                  <label className="launcher-key">
+                    Your Yahoo league
+                    <select
+                      value={liveKeyDraft}
+                      onChange={(event) => setLiveKeyDraft(event.target.value)}
+                    >
+                      {yahooLeagues.map((league) => (
+                        <option key={league.leagueKey} value={league.leagueKey}>
+                          {league.name}
+                          {league.season ? ` · ${league.season}` : ""}
+                          {league.numTeams ? ` · ${league.numTeams} teams` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <label className="launcher-key">
+                    League key
+                    <input
+                      type="text"
+                      placeholder="461.l.12345"
+                      value={liveKeyDraft}
+                      onChange={(event) => setLiveKeyDraft(event.target.value)}
+                    />
+                  </label>
+                )}
+                <p className={`launcher-help ${yahooLeaguesError ? "error" : ""}`}>
+                  {yahooLeaguesLoading
+                    ? "Finding your Yahoo leagues…"
+                    : yahooLeaguesError ||
+                      (yahooLeagues.length > 0
+                        ? "Selected from the NFL leagues connected to your Yahoo account."
+                        : "Open your league in Yahoo Fantasy and copy the key from its URL. It looks like 461.l.12345.")}
+                </p>
                 <button className="live-button" onClick={() => void startLive(liveKeyDraft)}>
                   Arm the live board
                 </button>

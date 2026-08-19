@@ -475,7 +475,7 @@ h2 {
 
 .launcher-options {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 12px;
   padding: 16px 18px 18px;
 }
@@ -533,7 +533,8 @@ h2 {
   color: var(--muted);
 }
 
-.launcher-key input {
+.launcher-key input,
+.launcher-key select {
   height: 34px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -541,6 +542,15 @@ h2 {
   color: var(--text);
   padding: 0 9px;
   font-size: 11px;
+}
+
+.launcher-options .launcher-help {
+  margin: -4px 0 0;
+  font-size: 10px;
+}
+
+.launcher-options .launcher-help.error {
+  color: var(--red);
 }
 
 @media (max-width: 900px) {

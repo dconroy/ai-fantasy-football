@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { getValidYahooAccessToken } from "@/adapters/yahoo/oauth";
 import { YahooApi } from "@/adapters/yahoo/yahoo-api";
+import { requireActiveUser } from "@/auth/current-user";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const token = await getValidYahooAccessToken();
+    const user = await requireActiveUser();
+    const token = await getValidYahooAccessToken(user);
     const leagues = await new YahooApi(token).getUserNflLeagues();
     return NextResponse.json({ leagues });
   } catch (error) {
