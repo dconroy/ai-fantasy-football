@@ -10,6 +10,7 @@ import {
   recordUserPick,
   rosterCompletionPick,
   slotForOverall,
+  startMockClock,
   waitingSlot,
   type MockDraftConfig,
   type MockPlayerSeed,
@@ -41,6 +42,19 @@ function config(overrides: Partial<MockDraftConfig> = {}): MockDraftConfig {
 }
 
 describe("mock-runner", () => {
+  it("stays paused until the clock is started", () => {
+    const paused = config({ startedAtIso: "", humanSlots: [1] });
+    expect(waitingSlot(paused)).toBeNull();
+    expect(isWaitingOnUser(paused)).toBe(false);
+    expect(mockDraftResults(paused).picks).toHaveLength(0);
+    expect(autoPickDeadline(paused)).toBeNull();
+    expect(() => recordUserPick(paused, "p1")).toThrow(/has not started/);
+
+    const running = startMockClock(paused, 50_000);
+    expect(Date.parse(running.startedAtIso)).toBe(50_000);
+    expect(waitingSlot(running, 50_000)).toBe(1);
+  });
+
   it("maps snake slots correctly", () => {
     expect(slotForOverall(1, 12)).toBe(1);
     expect(slotForOverall(5, 12)).toBe(5);

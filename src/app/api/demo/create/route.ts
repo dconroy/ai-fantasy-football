@@ -8,7 +8,7 @@ import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
 import { draftStateFor } from "@/persistence/league-draft";
 import {
   createDemoRoom,
-  takenSeatsFor,
+  demoClientState,
   validateDemoRoomInput,
 } from "@/persistence/demo-rooms";
 
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
         role: "play",
         slot,
         roomId: shared.id,
-        takenSlots: await takenSeatsFor(shared.id),
+        ...(await demoClientState(shared.id)),
       },
     });
     response.cookies.set(DEMO_COOKIE_NAME, token, demoCookieOptions());

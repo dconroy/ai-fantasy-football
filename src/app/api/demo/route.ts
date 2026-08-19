@@ -8,9 +8,9 @@ import {
 import { prisma } from "@/persistence/prisma";
 import { draftStateFor, getOrCreateLeagueDraft } from "@/persistence/league-draft";
 import {
+  demoClientState,
   findOrCreateOpenDemoRoom,
   releaseDemoSeat,
-  takenSeatsFor,
   validateDemoSeat,
 } from "@/persistence/demo-rooms";
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
             role: existing.role,
             slot: existing.slot,
             roomId: existing.roomId,
-            takenSlots: await takenSeatsFor(existing.roomId),
+            ...(await demoClientState(existing.roomId)),
           },
         });
       }
@@ -107,7 +107,7 @@ export async function GET(request: Request) {
         role: "watch",
         slot: null,
         roomId: shared.id,
-        takenSlots: await takenSeatsFor(shared.id),
+        ...(await demoClientState(shared.id)),
       },
     });
     response.cookies.set(DEMO_COOKIE_NAME, token, demoCookieOptions());

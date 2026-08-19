@@ -10,6 +10,7 @@ import {
   userPrefs,
 } from "@/persistence/league-draft";
 import { boardPayload } from "@/persistence/draft-payload";
+import { demoRoomStarted } from "@/persistence/demo-rooms";
 import { opponentPick, selectionForOverall, simulateToUserTurn } from "@/domain";
 
 export const runtime = "nodejs";
@@ -58,6 +59,9 @@ export async function POST(request: Request) {
     }
     if (demo) {
       const player = await requireDemoPlayer(draftId, demo);
+      if (!(await demoRoomStarted(draftId))) {
+        throw new AuthError("This demo draft has not started", 403);
+      }
       const shared = await getOrCreateLeagueDraft(draftId);
       const alreadySynchronized = shared.picks.some(
         (pick) => pick.player.id === body.playerId,

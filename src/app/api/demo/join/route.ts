@@ -9,6 +9,7 @@ import { prisma } from "@/persistence/prisma";
 import { draftStateFor, getOrCreateLeagueDraft } from "@/persistence/league-draft";
 import {
   claimDemoSeat,
+  demoClientState,
   findOrCreateOpenDemoRoom,
   releaseDemoSeat,
   takenSeatsFor,
@@ -107,7 +108,7 @@ export async function POST(request: NextRequest) {
         role: "play",
         slot: claimed.slot,
         roomId: shared.id,
-        takenSlots: await takenSeatsFor(shared.id),
+        ...(await demoClientState(shared.id)),
       },
     });
     response.cookies.set(DEMO_COOKIE_NAME, token, demoCookieOptions());

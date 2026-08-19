@@ -7,7 +7,7 @@ import {
   listMemberSeats,
   userPrefs,
 } from "@/persistence/league-draft";
-import { takenSeatsFor } from "@/persistence/demo-rooms";
+import { demoClientState } from "@/persistence/demo-rooms";
 
 export async function boardPayload(
   draftId: string,
@@ -36,7 +36,7 @@ export async function boardPayload(
         role: demo.role,
         slot: demo.slot,
         roomId: demo.roomId,
-        takenSlots: await takenSeatsFor(draftId),
+        ...(await demoClientState(draftId)),
       },
     };
   }

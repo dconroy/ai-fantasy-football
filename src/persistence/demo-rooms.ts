@@ -465,10 +465,10 @@ export async function claimDemoSeat(
   // and just re-arm the heartbeat. A robot seat gets promoted to human.
   const alreadyHuman = (loaded.humanSlots ?? []).includes(slot);
   try {
-    const started = alreadyHuman
-      ? startMockClock(loaded)
+    const next = alreadyHuman
+      ? loaded
       : await addMockHumanSlot(loaded.leagueKey, slot);
-    return { shared, slot, sessionId, config: started };
+    return { shared, slot, sessionId, config: next };
   } catch (error) {
     await releaseDemoSeat(roomId, slot, sessionId);
     throw error;
@@ -540,7 +540,7 @@ export async function createDemoRoom(
     chenRank: player.chenRank,
     adp: player.adp,
   }));
-  const config = startMockClock({
+  const config: MockDraftConfig = {
     leagueKey,
     teamCount: settings.teamCount,
     rounds: settings.rounds,
@@ -551,7 +551,7 @@ export async function createDemoRoom(
     autoPickMs: DEMO_AUTO_PICK_MS,
     varietySeed: randomUUID(),
     players,
-  });
+  };
   const { sessionId } = await claimSeatLease(
     roomId,
     config.humanSlots ?? [],
@@ -570,4 +570,37 @@ export async function createDemoRoom(
     sessionId,
     config,
   };
+}
+
+export function isDemoClockStarted(config: MockDraftConfig | null | undefined): boolean {
+  return Boolean(config?.startedAtIso) && Number.isFinite(Date.parse(config.startedAtIso));
+}
+
+export async function demoRoomStarted(roomId: string): Promise<boolean> {
+  const shared = await getOrCreateLeagueDraft(roomId);
+  if (!shared.leagueKey) return false;
+  return isDemoClockStarted(await loadMockConfig(shared.leagueKey));
+}
+
+export async function demoClientState(roomId: string): Promise<{
+  takenSlots: number[];
+  started: boolean;
+}> {
+  return {
+    takenSlots: await takenSeatsFor(roomId),
+    started: await demoRoomStarted(roomId),
+  };
+}
+
+/** Begin the mock clock. Safe to call again if the room is already running. */
+export async function startDemoDraft(roomId: string): Promise<MockDraftConfig> {
+  const shared = await getOrCreateLeagueDraft(roomId);
+  if (!shared.leagueKey) throw new Error("Demo room is missing a mock key");
+  const loaded = await loadMockConfig(shared.leagueKey);
+  if (!loaded) throw new Error("Demo room is not ready");
+  const started = startMockClock(loaded);
+  if (started.startedAtIso !== loaded.startedAtIso) {
+    await saveMockConfig(started);
+  }
+  return started;
 }

@@ -346,6 +346,7 @@ export function waitingSlot(
   config: MockDraftConfig,
   now: number = Date.now(),
 ): number | null {
+  if (!Number.isFinite(Date.parse(config.startedAtIso))) return null;
   const { humanSlots } = normalizeSeats(config);
   const order = projectedDraftOrder(config);
   if (order.length >= config.teamCount * config.rounds) return null;
@@ -446,6 +447,9 @@ export function recordUserPick(
   now: number = Date.now(),
   expectedSlot?: number,
 ): MockDraftConfig {
+  if (!Number.isFinite(Date.parse(config.startedAtIso))) {
+    throw new Error("Mock draft has not started");
+  }
   const slot = waitingSlot(config, now);
   if (slot === null) {
     throw new Error("Mock draft is not waiting on a human pick");

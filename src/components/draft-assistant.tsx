@@ -124,6 +124,14 @@ interface DraftPayload {
   me: MeState;
 }
 
+interface DemoInfo {
+  role: "watch" | "play";
+  slot: number | null;
+  roomId: string;
+  takenSlots?: number[];
+  started?: boolean;
+}
+
 interface YahooLeagueChoice {
   leagueKey: string;
   name: string;
@@ -260,6 +268,7 @@ export function DraftAssistant({
   const [takenSlots, setTakenSlots] = useState<number[]>([]);
   const [chosenSeat, setChosenSeat] = useState<number | null>(null);
   const [demoIdle, setDemoIdle] = useState(false);
+  const [demoStarted, setDemoStarted] = useState(!isDemo);
   const [rankingSources, setRankingSources] = useState<
     Array<{ id: string; label: string; available: boolean }>
   >([{ id: "chen", label: "Boris Chen", available: true }]);
@@ -332,7 +341,7 @@ export function DraftAssistant({
     return path;
   }
 
-  function applyPayload(payload: DraftPayload & { demo?: { role: "watch" | "play"; slot: number | null; roomId: string; takenSlots?: number[] } }, message?: string) {
+  function applyPayload(payload: DraftPayload & { demo?: DemoInfo }, message?: string) {
     // Spectators (demo "watch") report draftSlot 0 — no seat. Clamp any invalid
     // slot to a real one so snake math (nextSelectionForSlot, recommendations)
     // never throws "slot must be between 1 and N" and crashes the whole page.
@@ -365,6 +374,7 @@ export function DraftAssistant({
       setDraftId(payload.demo.roomId);
       setDemoRole(payload.demo.role);
       if (payload.demo.takenSlots) setTakenSlots(payload.demo.takenSlots);
+      setDemoStarted(payload.demo.started !== false);
     }
     if (message) setNotice(message);
   }
@@ -388,7 +398,7 @@ export function DraftAssistant({
         }
         return body;
       })
-      .then((payload: (DraftPayload & { demo?: { role: "watch" | "play"; slot: number | null; roomId: string; takenSlots?: number[] } }) | null) => {
+      .then((payload: (DraftPayload & { demo?: DemoInfo }) | null) => {
         if (cancelled) return;
         if (payload?.draft && payload.players && payload.me) {
           if (payload.demo) setDraftId(payload.demo.roomId);
@@ -613,7 +623,7 @@ export function DraftAssistant({
   const isMyTurn =
     !draftComplete &&
     current.slot === state.draft.userSlot &&
-    (!isDemo || demoRole === "play");
+    (!isDemo || (demoRole === "play" && demoStarted));
   const draftReport = useMemo(
     () => (draftComplete ? buildDraftReport(state.draft) : null),
     [draftComplete, state.draft],
@@ -1171,7 +1181,7 @@ export function DraftAssistant({
     const payload = (await response.json()) as DraftPayload & {
       error?: string;
       takenSlots?: number[];
-      demo?: { role: "watch" | "play"; slot: number | null; roomId: string; takenSlots?: number[] };
+      demo?: DemoInfo;
     };
     if (response.status === 409) {
       if (payload.takenSlots) setTakenSlots(payload.takenSlots);
@@ -1265,6 +1275,23 @@ export function DraftAssistant({
       Restart mock
     </button>
   ) : null;
+
+  async function startDemoDraft() {
+    if (!draftId) return;
+    const response = await fetch(
+      `/api/demo/start?draftId=${encodeURIComponent(draftId)}`,
+      { method: "POST" },
+    );
+    const payload = (await response.json()) as DraftPayload & {
+      error?: string;
+      demo?: DemoInfo;
+    };
+    if (!response.ok || !payload.draft) {
+      setNotice(payload.error ?? "Could not start the draft.");
+      return;
+    }
+    applyPayload(payload, "Draft started — robots will fill empty seats.");
+  }
 
   async function copyDemoInvite() {
     if (!draftId) return;
@@ -1434,6 +1461,23 @@ export function DraftAssistant({
         </div>
       )}
 
+      {isDemo && !demoStarted && !draftComplete && (
+        <div className="preview-banner" role="status">
+          <span>
+            {takenSlots.length
+              ? `${takenSlots.length} seated · ${Math.max(0, state.draft.teamCount - takenSlots.length)} open. Invite friends, then start when you're ready — robots will fill empty seats.`
+              : "This draft is waiting. Invite friends, then start it when everyone is seated."}
+          </span>
+          {demoRole === "play" ? (
+            <button onClick={() => void startDemoDraft()}>Start draft</button>
+          ) : (
+            <button className="secondary" type="button" onClick={() => void copyDemoInvite()}>
+              Copy invite
+            </button>
+          )}
+        </div>
+      )}
+
       <section className={`control-strip ${isMyTurn ? "on-clock" : ""}`}>
         <label>
           Draft slot
@@ -1456,11 +1500,13 @@ export function DraftAssistant({
           <strong>
             {draftComplete
               ? "Draft complete"
-              : isMyTurn
-                ? showAutoCountdown
-                  ? `🚨 YOU'RE ON THE CLOCK — auto-draft in ${autoPickSeconds}s`
-                  : "🚨 YOU'RE ON THE CLOCK"
-                : `${picksUntilMyTurn} picks until your turn`}
+              : isDemo && !demoStarted
+                ? "Waiting to start"
+                : isMyTurn
+                  ? showAutoCountdown
+                    ? `🚨 YOU'RE ON THE CLOCK — auto-draft in ${autoPickSeconds}s`
+                    : "🚨 YOU'RE ON THE CLOCK"
+                  : `${picksUntilMyTurn} picks until your turn`}
           </strong>
           <span>
             Pick {current.overall} · Round {current.round} · Slot {current.slot}
@@ -1521,13 +1567,24 @@ export function DraftAssistant({
                 >
                   Copy invite link
                 </button>
+                {demoRole === "play" && !demoStarted && !draftComplete ? (
+                  <button
+                    className="live-button"
+                    type="button"
+                    onClick={() => void startDemoDraft()}
+                  >
+                    Start draft
+                  </button>
+                ) : null}
               </>
             ) : (
               restartMockButton
             )}
             <span className="strip-hint">
               {isDemo
-                ? "This room is public — invite others to choose an open seat, or return to the lobby for another draft."
+                ? demoStarted
+                  ? "This room is public — invite others to choose an open seat, or return to the lobby for another draft."
+                  : "The clock is paused. Share the invite, then start the draft when your friends are in."
                 : "The board is shared. Only the admin runs live sync and resets; you pick players, pins, and avoids."}
             </span>
           </>

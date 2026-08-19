@@ -6,7 +6,6 @@ import {
   claimHumanSlot,
   mockDraftResults,
   recordUserPick,
-  startMockClock,
 } from "./mock-runner";
 import type { YahooSyncSnapshot } from "./yahoo-api";
 
@@ -67,8 +66,8 @@ export async function addMockHumanSlot(
     } catch {
       throw new Error(`No mock draft running for ${leagueKey}`);
     }
-    if ((config.humanSlots ?? []).includes(slot)) return startMockClock(config);
-    const next = startMockClock(claimHumanSlot(config, slot));
+    if ((config.humanSlots ?? []).includes(slot)) return config;
+    const next = claimHumanSlot(config, slot);
     const result = await prisma.syncCheckpoint.updateMany({
       where: { id: row.id, sequence: row.sequence },
       data: {

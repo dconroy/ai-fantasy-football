@@ -206,8 +206,9 @@ export function DemoLobby() {
           <p className="eyebrow">Your draft is ready</p>
           <h1>Invite your league-mates.</h1>
           <p>
-            You have slot {created.slot}. Share this unique link so everyone else
-            can choose an open seat in your setup.
+            You have slot {created.slot}. The clock stays paused until you start
+            it from the board — share this link, wait for friends, then kick it
+            off when you&apos;re ready.
           </p>
           <label>
             Invite link
@@ -295,7 +296,9 @@ export function DemoLobby() {
                     <span>
                       {room.complete
                         ? `${room.totalPicks} of ${room.totalPicks} picks made`
-                        : `${room.activeSeats} seated · ${room.openSeats} open · pick ${Math.min(room.picks + 1, room.totalPicks)}`}
+                        : room.started
+                          ? `${room.activeSeats} seated · ${room.openSeats} open · pick ${Math.min(room.picks + 1, room.totalPicks)}`
+                          : `${room.activeSeats} seated · ${room.openSeats} open · waiting to start`}
                     </span>
                   </div>
                   <div className="demo-room-actions">
@@ -392,8 +395,9 @@ export function DemoLobby() {
             </button>
           </form>
           <p className="demo-create-note">
-            You will get a unique invite link. Robots fill empty seats, and friends
-            can join while the draft is running.
+            You will get a unique invite link. The draft stays paused until you
+            start it, so you can wait for friends. Robots fill empty seats after
+            you start.
           </p>
         </section>
       </div>
