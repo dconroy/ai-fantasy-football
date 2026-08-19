@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   analyzeDraftRoster,
@@ -379,8 +380,11 @@ export function DraftAssistant({
 
   useEffect(() => {
     if (!ready) return;
+    const path = draftId
+      ? `/api/draft?draftId=${encodeURIComponent(draftId)}`
+      : "/api/draft";
     const timer = window.setInterval(() => {
-      fetch(draftApi("/api/draft"), { cache: "no-store" })
+      fetch(path, { cache: "no-store" })
         .then((response) => (response.ok ? response.json() : null))
         .then((payload: DraftPayload | null) => {
           if (!payload?.updatedAt || payload.updatedAt === stateRef.current.updatedAt) return;
@@ -433,7 +437,7 @@ export function DraftAssistant({
       }).catch(() => undefined);
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [ready, state.draft.userSlot, state.pins, state.avoids, state.weights, dark, me]);
+  }, [ready, isDemo, state, state.draft.userSlot, state.pins, state.avoids, state.weights, dark, me]);
 
   const current = selectionForOverall(state.draft.picks.length + 1);
   const nextMine = nextSelectionForSlot(
@@ -1041,7 +1045,7 @@ export function DraftAssistant({
     return () => {
       cancelled = true;
     };
-  }, [detailPlayer?.id, detailPlayer?.name, detailPlayer?.position]);
+  }, [detailPlayer]);
 
   const isAdmin = !isDemo && me?.role === "admin";
   const adminView = isAdmin && !previewMember;
@@ -1112,8 +1116,8 @@ export function DraftAssistant({
           </div>
         </div>
         <div className="status-row">
-          {!isDemo ? <a className="status" href="/weekly">Weekly HQ</a> : (
-            <a className="status" href="/">Home</a>
+          {!isDemo ? <Link className="status" href="/weekly">Weekly HQ</Link> : (
+            <Link className="status" href="/">Home</Link>
           )}
           {isDemo && demoRole !== "play" ? (
             <button className="live-button" onClick={() => void joinDemo()}>

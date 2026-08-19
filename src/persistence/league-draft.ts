@@ -11,10 +11,7 @@ import {
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
 import type { ChenImport } from "@/adapters/chen/boris-chen";
 import { scoringFromSource } from "@/adapters/chen/boris-chen";
-import {
-  getFreshChenImport,
-  readCachedChenImport,
-} from "@/adapters/chen/server-cache";
+import { getFreshChenImport } from "@/adapters/chen/server-cache";
 import {
   getPlayerMetaIndex,
   playerMetaKey,
@@ -78,10 +75,6 @@ function shapeChenImport(cached: ChenImport | null) {
 
 async function freshPlayersFromChen() {
   return shapeChenImport(await getFreshChenImport());
-}
-
-async function playersFromChenCache() {
-  return shapeChenImport(await readCachedChenImport());
 }
 
 export async function getOrCreateLeagueDraft(

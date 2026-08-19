@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import {
   DEMO_COOKIE_NAME,
   createDemoToken,
