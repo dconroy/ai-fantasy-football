@@ -785,6 +785,12 @@ export function DraftAssistant() {
   const isAdmin = me?.role === "admin";
   const adminView = isAdmin && !previewMember;
   const pendingCount = adminUsers.filter((user) => user.status === "pending").length;
+  // A practice mock runs on a "mock." league key (robots + auto-advance); a
+  // manual mock uses mode "mock". Either way the admin may want a one-click
+  // restart without hunting through the "Start a draft…" launcher.
+  const practiceMockActive = state.leagueKey?.startsWith("mock.") ?? false;
+  const manualMockActive = state.mode === "mock";
+  const mockActive = practiceMockActive || manualMockActive;
 
   async function patchUser(id: string, data: Record<string, unknown>) {
     const response = await fetch("/api/admin/users", {
@@ -932,6 +938,17 @@ export function DraftAssistant() {
             >
               Undo
             </button>
+            {mockActive && (
+              <button
+                className="secondary"
+                onClick={() =>
+                  void (practiceMockActive ? startMockHarness() : startSession("mock"))
+                }
+                title="Clear the board and run this mock again from scratch"
+              >
+                Restart mock
+              </button>
+            )}
             <span className="strip-spacer" />
             <button
               className="live-button"

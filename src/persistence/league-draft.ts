@@ -18,14 +18,11 @@ import {
   getPlayerMetaIndex,
   playerMetaKey,
 } from "@/adapters/yahoo/player-meta";
+import { getSleeperIndex } from "@/adapters/sleeper/players";
+import { byeWeekForTeam } from "@/config/nfl-byes";
 import { normalizeTeam } from "@/domain/identity";
 import type { User } from "@prisma/client";
 import type { Position } from "@/domain";
-
-/** Sleeper hosts free, no-auth team logos keyed by lowercase abbreviation. */
-function sleeperTeamLogo(abbr: string): string {
-  return `https://sleepercdn.com/images/team_logos/nfl/${abbr.toLowerCase()}.png`;
-}
 
 export const LEAGUE_DRAFT_ID = "full-contact-2026";
 
@@ -182,10 +179,15 @@ function mapInjuryStatus(status?: string): Player["injuryStatus"] | undefined {
 
 /**
  * Backfills team, bye week, headshot, percent-owned, and injury status onto the
- * shared board from Yahoo, since Boris Chen's tier file carries none of it
- * (byes would otherwise always render as "—" and there'd be no player photos).
- * Throttled and best-effort: it no-ops once the pool is enriched, only touches
- * players still missing data, and never breaks board loading.
+ * shared board, since Boris Chen's tier file carries none of it (byes would
+ * otherwise render as "—" and there'd be no player photos).
+ *
+ * Primary source is Sleeper's free, no-auth player dump (headshots + team) paired
+ * with a static 2026 bye map — this works even when Yahoo's Fantasy API isn't
+ * authorized for this app. Yahoo, when connected, layers on percent-owned and
+ * injury status as a best-effort extra. Throttled and best-effort: it no-ops once
+ * the pool is enriched, only touches players still missing data, and never breaks
+ * board loading.
  */
 export async function ensureBoardByes(): Promise<void> {
   if (Date.now() - lastByeCheck < BYE_CHECK_INTERVAL_MS) return;
@@ -195,63 +197,47 @@ export async function ensureBoardByes(): Promise<void> {
     // Built-in fixtures already carry byes; nothing to enrich.
     if (current.source === "Built-in mock data") return;
     const needsEnrichment = current.players.some(
-      (player) => player.byeWeek === undefined || player.imageUrl === undefined,
+      (player) =>
+        player.byeWeek === undefined ||
+        player.imageUrl === undefined ||
+        !player.team ||
+        player.team === "FA",
     );
     if (!needsEnrichment) return;
 
-    const index = await getPlayerMetaIndex();
-    if (!index) return;
+    const sleeper = await getSleeperIndex();
+    // Yahoo is a bonus (percent-owned, injuries); tolerate it being unavailable.
+    const yahoo = await getPlayerMetaIndex().catch(() => null);
+    if (!sleeper && !yahoo) return;
 
     let changed = false;
     const players = current.players.map((player) => {
-      // Defenses never match Yahoo by name (Chen lists "Philadelphia Eagles",
-      // Yahoo lists the city), so resolve them by team abbreviation instead:
-      // Sleeper's free team logo for the photo and the shared team bye we
-      // derived from every rostered player's bye week.
-      if (player.position === "DEF") {
-        const abbr =
-          normalizeTeam(player.name) ??
-          (player.team && player.team !== "FA"
-            ? normalizeTeam(player.team)
-            : null);
-        if (!abbr) return player;
-        const next: Player = {
-          ...player,
-          team: player.team && player.team !== "FA" ? player.team : abbr,
-          teamName: player.teamName ?? player.name,
-          byeWeek: player.byeWeek ?? index.teamBye.get(abbr),
-          imageUrl: player.imageUrl ?? sleeperTeamLogo(abbr),
-        };
-        if (
-          next.team === player.team &&
-          next.byeWeek === player.byeWeek &&
-          next.imageUrl === player.imageUrl &&
-          next.teamName === player.teamName
-        ) {
-          return player;
-        }
-        changed = true;
-        return next;
-      }
+      const key = playerMetaKey(player.name, player.position);
+      const s = sleeper?.get(key);
+      const y = yahoo?.players.get(key);
 
-      const hit = index.players.get(playerMetaKey(player.name, player.position));
-      // Even without a name match, a known team still resolves the bye week.
+      // Resolve a canonical team abbr from whatever we know: existing team,
+      // Sleeper's team, or (for defenses) the team name itself.
       const teamAbbr =
-        player.team && player.team !== "FA" ? normalizeTeam(player.team) : null;
-      const teamBye = teamAbbr ? index.teamBye.get(teamAbbr) : undefined;
-      if (!hit && teamBye === undefined) return player;
+        (player.team && player.team !== "FA" ? normalizeTeam(player.team) : null) ??
+        (s?.team ? normalizeTeam(s.team) : null) ??
+        (player.position === "DEF" ? normalizeTeam(player.name) : null);
+
       const next: Player = {
         ...player,
         team:
           player.team && player.team !== "FA"
             ? player.team
-            : hit?.team || player.team,
-        teamName: player.teamName ?? hit?.teamFull,
-        byeWeek: player.byeWeek ?? hit?.byeWeek ?? teamBye,
-        imageUrl: player.imageUrl ?? hit?.imageUrl,
-        percentOwned: player.percentOwned ?? hit?.percentOwned,
-        playerKey: player.playerKey ?? hit?.playerKey,
-        injuryStatus: player.injuryStatus ?? mapInjuryStatus(hit?.status),
+            : teamAbbr ?? s?.team ?? y?.team ?? player.team,
+        teamName:
+          player.teamName ??
+          y?.teamFull ??
+          (player.position === "DEF" ? player.name : undefined),
+        byeWeek: player.byeWeek ?? byeWeekForTeam(teamAbbr) ?? y?.byeWeek,
+        imageUrl: player.imageUrl ?? s?.imageUrl ?? y?.imageUrl,
+        percentOwned: player.percentOwned ?? y?.percentOwned,
+        playerKey: player.playerKey ?? y?.playerKey,
+        injuryStatus: player.injuryStatus ?? mapInjuryStatus(y?.status),
       };
       if (
         next.team === player.team &&
