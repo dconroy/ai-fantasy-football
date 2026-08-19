@@ -1775,9 +1775,9 @@ export function DraftAssistant() {
               value={avoidFilter}
               onChange={(event) => setAvoidFilter(event.target.value as "all" | "only")}
             >
-              <option value="all">All players</option>
+              <option value="all">All</option>
               <option value="only">
-                Avoided only{avoids.length ? ` (${avoids.length})` : ""}
+                Avoids{avoids.length ? ` (${avoids.length})` : ""}
               </option>
             </select>
           </div>
