@@ -3,6 +3,7 @@ import {
   autoPickDeadline,
   autoPickIfDue,
   autoPickPlayerId,
+  claimHumanSlot,
   isWaitingOnUser,
   mockDraftResults,
   projectedDraftOrder,
@@ -298,5 +299,16 @@ describe("mock-runner", () => {
     // Human confirms before the deadline; nothing is auto-due afterward at t.
     const confirmed = recordUserPick(base, "p1", 5_000, 1);
     expect(confirmed.picksBySlot?.[1]).toEqual(["p1"]);
+  });
+
+  it("lets a new human inherit already-published robot picks for that seat", () => {
+    const started = config({
+      humanSlots: [1],
+      startedAtIso: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const afterFirst = recordUserPick(started, "p1", Date.now() - 50_000, 1);
+    const claimed = claimHumanSlot(afterFirst, 3);
+    expect(claimed.humanSlots).toEqual([1, 3]);
+    expect(() => claimHumanSlot(claimed, 3)).toThrow(/already taken/);
   });
 });

@@ -29,8 +29,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const { user } = await exchangeYahooCode(code);
-    const destination =
-      user.status === "active" ? `${appUrl}/?yahoo=connected` : `${appUrl}/pending`;
+    const destination = `${appUrl}/app?yahoo=connected`;
     const response = NextResponse.redirect(destination);
     response.cookies.set(
       SESSION_COOKIE_NAME,

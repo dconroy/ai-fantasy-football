@@ -29,6 +29,9 @@ export interface YahooDraftResult {
   teamKey: string;
   playerKey: string;
   cost?: number;
+  playerName?: string;
+  playerPosition?: string;
+  playerTeam?: string;
 }
 
 export interface YahooSyncSnapshot {
