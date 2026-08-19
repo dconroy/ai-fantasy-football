@@ -1270,8 +1270,7 @@ h2 {
   transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
 }
 
-button.board-pick:hover,
-.board-cell.dock-hot button.board-pick {
+button.board-pick:hover {
   filter: brightness(1.06);
   box-shadow: 0 10px 22px rgb(0 0 0 / 22%);
 }

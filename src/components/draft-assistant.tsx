@@ -540,17 +540,36 @@ export function DraftAssistant() {
       const mockPlayer = pick.playerKey ? mockLookup.get(pick.playerKey) : undefined;
       const query = mockPlayer?.name ?? pick.playerName ?? "";
       const team = mockPlayer?.team ?? pick.playerTeam;
-      if (!query) {
+      const byId = mockPlayer
+        ? current.players.find((player) => player.id === mockPlayer.id)
+        : undefined;
+      if (!query && !byId && !mockPlayer) {
         unresolved.push(`pick ${pick.pick}: no player name`);
         break;
       }
-      const identity = resolvePlayerIdentity(query, current.players, { team });
-      if (identity.status !== "resolved") {
+      const identity = byId
+        ? { status: "resolved" as const, player: byId }
+        : query
+          ? resolvePlayerIdentity(query, current.players, { team })
+          : { status: "unresolved" as const };
+      const fallback = mockPlayer
+        ? {
+            id: mockPlayer.id,
+            name: mockPlayer.name,
+            position: mockPlayer.position as Position,
+            team: mockPlayer.team,
+          }
+        : undefined;
+      const resolved =
+        identity.status === "resolved"
+          ? identity.player
+          : fallback;
+      if (!resolved) {
         unresolved.push(`pick ${pick.pick}: ${identity.status} for ${query}`);
         break;
       }
       try {
-        draft = makeManualPick(draft, identity.player, {
+        draft = makeManualPick(draft, resolved, {
           madeAt: snapshot.syncedAt,
         });
         applied += 1;
@@ -570,6 +589,7 @@ export function DraftAssistant() {
     }
     if (unresolved.length) {
       setSyncStatus(`${remote.length} remote · stopped at ${unresolved[0]}`);
+      setNotice(`Mock sync paused: ${unresolved[0]}`);
       return;
     }
     const nextSlot = selectionForOverall(
