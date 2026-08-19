@@ -142,6 +142,17 @@ describe("mock-runner", () => {
     expect(waitingSlot(auto!, 30_000 + base.intervalMs)).toBe(3);
   });
 
+  it("does not replay a player already taken by another seat", () => {
+    const base = config({
+      humanSlots: [1, 3],
+      picksBySlot: { 1: ["p1"], 3: ["p1"] },
+    });
+    const order = projectedDraftOrder(base);
+    const ids = order.map((player) => player.id);
+    expect(ids).toContain("p1");
+    expect(ids.filter((id) => id === "p1")).toHaveLength(1);
+  });
+
   it("does not auto-draft when the feature is disabled", () => {
     const base = config({ humanSlots: [1], picksBySlot: {} });
     expect(autoPickDeadline(base)).toBeNull();

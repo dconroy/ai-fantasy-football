@@ -63,6 +63,7 @@ export async function PUT(request: Request) {
       players?: Player[];
       chen?: ChenImport;
       picks?: DraftState["picks"];
+      replace?: boolean;
       importedAt?: string;
       source?: string;
       expectedUpdatedAt?: string;
@@ -88,7 +89,9 @@ export async function PUT(request: Request) {
       });
     } else if (body?.action === "picks" && Array.isArray(body.picks)) {
       const current = await getOrCreateLeagueDraft();
-      if (body.picks.length < current.picks.length) {
+      const replacingMock =
+        body.replace === true && current.leagueKey?.startsWith("mock.");
+      if (!replacingMock && body.picks.length < current.picks.length) {
         return NextResponse.json(
           { error: "Refusing to shrink the shared board" },
           { status: 409 },

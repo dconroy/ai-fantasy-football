@@ -122,6 +122,10 @@ export function projectedDraftOrder(config: MockDraftConfig): MockPlayerSeed[] {
       const player = byId.get(userId);
       if (!player) break;
       consumed[slot] = index + 1;
+      if (picks.some((entry) => entry.id === player.id)) {
+        // Stale/duplicate confirm — don't replay a player already on the board.
+        break;
+      }
       remaining.delete(player.id);
       rosters[slot - 1][player.position] += 1;
       picks.push(player);
@@ -242,14 +246,16 @@ export function recordUserPick(
       `Mock draft is on the clock for slot ${slot}, not slot ${expectedSlot}`,
     );
   }
-  if (projectedDraftOrder(config).some((player) => player.id === playerId)) {
+  const { humanSlots, picksBySlot } = normalizeSeats(config);
+  const alreadyPicked =
+    projectedDraftOrder(config).some((player) => player.id === playerId) ||
+    Object.values(picksBySlot).some((ids) => ids.includes(playerId));
+  if (alreadyPicked) {
     throw new Error(`Player ${playerId} is already drafted`);
   }
   if (!config.players.some((player) => player.id === playerId)) {
     throw new Error(`Unknown player ${playerId}`);
   }
-
-  const { humanSlots, picksBySlot } = normalizeSeats(config);
   const picksBeforeConfirm = projectedDraftOrder(config).length;
   const nextPicksBySlot: Record<number, readonly string[]> = {};
   for (const seat of humanSlots) nextPicksBySlot[seat] = picksBySlot[seat] ?? [];

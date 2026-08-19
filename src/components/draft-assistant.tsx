@@ -6,6 +6,7 @@ import {
   analyzeDraftRoster,
   availablePlayers,
   createDraftState,
+  extendDraftWithRemotePlayers,
   makeManualPick,
   nextSelectionForSlot,
   recommendPlayers,
@@ -537,15 +538,16 @@ export function DraftAssistant() {
     const mockLookup = new Map(
       (snapshot.mockOrder ?? []).map((player) => [`mock.p.${player.id}`, player]),
     );
-    let draft = current.draft;
-    let applied = 0;
     const unresolved: string[] = [];
+    const resolvedRemote: Player[] = [];
     // The mock only publishes *resolved* picks (robots, confirmed humans, and
     // auto-drafted humans) and always omits the seat currently on the clock, so
     // everything here is safe to apply in order. A human seat that never picks
     // is auto-drafted server-side after the deadline and shows up as a normal
     // pick — that's how the board keeps moving when someone steps away.
-    for (const pick of remote.slice(current.draft.picks.length)) {
+    for (const pick of isMockHarness
+      ? remote
+      : remote.slice(current.draft.picks.length)) {
       const mockPlayer = pick.playerKey ? mockLookup.get(pick.playerKey) : undefined;
       const query = mockPlayer?.name ?? pick.playerName ?? "";
       const team = mockPlayer?.team ?? pick.playerTeam;
@@ -577,28 +579,58 @@ export function DraftAssistant() {
         unresolved.push(`pick ${pick.pick}: ${identity.status} for ${query}`);
         break;
       }
+      resolvedRemote.push(resolved);
+    }
+    let draft = current.draft;
+    let applied = 0;
+    let rebuilt = false;
+    if (resolvedRemote.length > 0) {
       try {
-        draft = makeManualPick(draft, resolved, {
-          madeAt: snapshot.syncedAt,
-        });
-        applied += 1;
+        const next = isMockHarness
+          ? extendDraftWithRemotePlayers(
+              current.draft,
+              resolvedRemote,
+              snapshot.syncedAt,
+            )
+          : (() => {
+              let nextDraft = current.draft;
+              let added = 0;
+              for (const player of resolvedRemote) {
+                nextDraft = makeManualPick(nextDraft, player, {
+                  madeAt: snapshot.syncedAt,
+                });
+                added += 1;
+              }
+              return { draft: nextDraft, applied: added, rebuilt: false };
+            })();
+        draft = next.draft;
+        applied = next.applied;
+        rebuilt = next.rebuilt;
       } catch (error) {
-        unresolved.push(
-          `pick ${pick.pick}: ${error instanceof Error ? error.message : "failed"}`,
-        );
-        break;
+        unresolved.push(error instanceof Error ? error.message : "failed");
       }
     }
     if (applied > 0) {
       void mutateDraft(
         "/api/draft",
-        { action: "picks", picks: draft.picks, expectedUpdatedAt: current.updatedAt },
-        `Synced ${applied} remote pick(s).`,
+        {
+          action: "picks",
+          picks: draft.picks,
+          replace: rebuilt && isMockHarness,
+          expectedUpdatedAt: current.updatedAt,
+        },
+        rebuilt
+          ? `Resynced the board to ${draft.picks.length} mock pick(s).`
+          : `Synced ${applied} remote pick(s).`,
       );
     }
     if (unresolved.length) {
       setSyncStatus(`${remote.length} remote · stopped at ${unresolved[0]}`);
-      setNotice(`Mock sync paused: ${unresolved[0]}`);
+      setNotice(
+        isMockHarness
+          ? `Mock sync paused: ${unresolved[0]}`
+          : `Sync paused: ${unresolved[0]}`,
+      );
       return;
     }
     const nextSlot = selectionForOverall(
@@ -775,6 +807,16 @@ export function DraftAssistant() {
   }
 
   async function markDrafted(player: Player) {
+    if (leagueKey.startsWith("mock.")) {
+      if (isMyTurn) {
+        await confirm(player);
+        return;
+      }
+      setNotice(
+        "In a practice mock the robots record other seats. Use Confirm on your turn.",
+      );
+      return;
+    }
     await mutateDraft(
       "/api/draft/pick",
       { playerId: player.id },

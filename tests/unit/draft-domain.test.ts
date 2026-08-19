@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   assignRosterSlot,
   createDraftState,
+  extendDraftWithRemotePlayers,
   makeManualPick,
   opponentPick,
   simulateToUserTurn,
@@ -206,5 +207,35 @@ describe("shared opponent simulation", () => {
     const next = simulateToUserTurn(createDraftState(3), pool);
     expect(next.picks).toHaveLength(2);
     expect(next.picks.map((item) => item.slot)).toEqual([1, 2]);
+  });
+});
+
+describe("remote pick reconcile", () => {
+  it("appends when the remote order continues this board", () => {
+    const first = player("1", "RB");
+    const second = player("2", "WR");
+    const current = makeManualPick(createDraftState(1, { teamCount: 4, rounds: 3 }), first);
+    const next = extendDraftWithRemotePlayers(current, [first, second]);
+    expect(next.rebuilt).toBe(false);
+    expect(next.applied).toBe(1);
+    expect(next.draft.picks.map((item) => item.player.id)).toEqual(["1", "2"]);
+  });
+
+  it("rebuilds when a later remote pick was already on the board", () => {
+    const warren = player("chen:TE:tyler warren", "TE", { name: "Tyler Warren" });
+    const other = player("2", "WR");
+    let current = makeManualPick(
+      createDraftState(1, { teamCount: 4, rounds: 3 }),
+      warren,
+    );
+    current = makeManualPick(current, other);
+    const remote = [other, player("3", "RB"), warren];
+    const next = extendDraftWithRemotePlayers(current, remote);
+    expect(next.rebuilt).toBe(true);
+    expect(next.draft.picks.map((item) => item.player.id)).toEqual([
+      "2",
+      "3",
+      "chen:TE:tyler warren",
+    ]);
   });
 });

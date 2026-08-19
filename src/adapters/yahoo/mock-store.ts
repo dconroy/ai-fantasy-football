@@ -57,11 +57,29 @@ export async function appendMockUserPick(
   playerId: string,
   expectedSlot?: number,
 ): Promise<MockDraftConfig> {
-  const config = await loadMockConfig(leagueKey);
-  if (!config) throw new Error(`No mock draft running for ${leagueKey}`);
-  const next = recordUserPick(config, playerId, Date.now(), expectedSlot);
-  await saveMockConfig(next);
-  return next;
+  for (let guard = 0; guard < 5; guard += 1) {
+    const row = await prisma.syncCheckpoint.findUnique({
+      where: { id: checkpointId(leagueKey) },
+    });
+    if (!row?.payload) throw new Error(`No mock draft running for ${leagueKey}`);
+    let config: MockDraftConfig;
+    try {
+      config = JSON.parse(row.payload) as MockDraftConfig;
+    } catch {
+      throw new Error(`No mock draft running for ${leagueKey}`);
+    }
+    const next = recordUserPick(config, playerId, Date.now(), expectedSlot);
+    const result = await prisma.syncCheckpoint.updateMany({
+      where: { id: checkpointId(leagueKey), sequence: row.sequence },
+      data: {
+        sequence: humanPickCount(next),
+        syncedAt: new Date(),
+        payload: JSON.stringify(next),
+      },
+    });
+    if (result.count === 1) return next;
+  }
+  throw new Error("Couldn't record that pick; try again");
 }
 
 /**
