@@ -74,7 +74,7 @@ export async function POST(request: Request) {
 
   const teamCount = body.teamCount ?? 12;
   const rounds = body.rounds ?? 15;
-  const intervalMs = Math.max(1000, body.intervalMs ?? 8000);
+  const intervalMs = Math.max(1000, body.intervalMs ?? 3000);
   const humanSlots = [
     ...new Set(
       (body.humanSlots && body.humanSlots.length > 0

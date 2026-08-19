@@ -253,7 +253,7 @@ export function DraftAssistant() {
   const [yahooConnected, setYahooConnected] = useState(false);
   const [notice, setNotice] = useState("Simulation ready");
   const [leagueKey, setLeagueKey] = useState("");
-  const [syncIntervalSec, setSyncIntervalSec] = useState(5);
+  const [syncIntervalSec, setSyncIntervalSec] = useState(3);
   const [syncStatus, setSyncStatus] = useState<string>("idle");
   const [autoPickAt, setAutoPickAt] = useState<string | null>(null);
   const [waitingSlotRemote, setWaitingSlotRemote] = useState<number | null>(null);
@@ -1436,7 +1436,7 @@ export function DraftAssistant() {
                       value={syncIntervalSec}
                       onChange={(event) => setSyncIntervalSec(Number(event.target.value))}
                     >
-                      {[3, 5, 8, 15, 30].map((value) => (
+                      {[2, 3, 5, 8, 15, 30].map((value) => (
                         <option key={value} value={value}>
                           {value}s
                         </option>
@@ -1816,27 +1816,41 @@ export function DraftAssistant() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
-            <select value={position} onChange={(event) => setPosition(event.target.value as Position | "ALL")}>
-              {POSITIONS.map((value) => <option key={value}>{value}</option>)}
-            </select>
-            <select value={tier} onChange={(event) => setTier(event.target.value)}>
-              <option value="ALL">All tiers</option>
-              {tiers.map((value) => <option key={value} value={value}>Tier {value}</option>)}
-            </select>
-            <select
-              value={listFilter}
-              onChange={(event) =>
-                setListFilter(event.target.value as "all" | "avoids" | "pins")
-              }
-            >
-              <option value="all">All</option>
-              <option value="pins">
-                Pins{pins.length ? ` (${pins.length})` : ""}
-              </option>
-              <option value="avoids">
-                Avoids{avoids.length ? ` (${avoids.length})` : ""}
-              </option>
-            </select>
+            <label className="filter-label">
+              Pos
+              <select value={position} onChange={(event) => setPosition(event.target.value as Position | "ALL")}>
+                <option value="ALL">Any</option>
+                {POSITIONS.filter((value) => value !== "ALL").map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-label">
+              Tier
+              <select value={tier} onChange={(event) => setTier(event.target.value)}>
+                <option value="ALL">Any</option>
+                {tiers.map((value) => (
+                  <option key={value} value={value}>T{value}</option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-label">
+              Show
+              <select
+                value={listFilter}
+                onChange={(event) =>
+                  setListFilter(event.target.value as "all" | "avoids" | "pins")
+                }
+              >
+                <option value="all">Everyone</option>
+                <option value="pins">
+                  Pins{pins.length ? ` (${pins.length})` : ""}
+                </option>
+                <option value="avoids">
+                  Avoids{avoids.length ? ` (${avoids.length})` : ""}
+                </option>
+              </select>
+            </label>
           </div>
           <div className="player-table" role="table">
             <div className="table-row table-head" role="row">
