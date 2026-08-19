@@ -102,7 +102,7 @@ model User {
 }
 
 model LeagueDraft {
-  id            String   @id @default("full-contact-2026")
+  id            String   @id @default("house-2026")
   leagueKey     String?
   mode          String   @default("mock")
   teamCount     Int      @default(12)

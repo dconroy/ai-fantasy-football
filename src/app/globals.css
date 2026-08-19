@@ -236,6 +236,22 @@ h2 {
   background: #9a4f1e;
 }
 
+.demo-join {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.demo-seat-select {
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+}
+
 .icon-button, .secondary {
   color: var(--text);
   background: var(--panel);

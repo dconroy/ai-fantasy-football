@@ -24,7 +24,7 @@ There is no password gate and nobody has to approve you.
 
 1. Open [dojo.football/demo](https://dojo.football/demo).
 2. You start as a **spectator**. The room stays paused until someone joins.
-3. Click **Join this draft** to take an open seat (1–12). That starts the clock.
+3. **Pick a seat** from the dropdown (only open seats are listed) and click **Join** — or just click **Join next open seat** to grab the first free one. That starts the clock. If someone grabs your seat first, you’ll be asked to pick another.
 4. Robots fill empty seats. The room **pauses on your turn** until you confirm.
 5. If you sit on the clock for about 20 seconds, the room auto-drafts best-available so it doesn’t stall.
 6. If all 12 seats are taken, the next person gets a **new room**. Several demos can run at once.
@@ -150,6 +150,6 @@ Same rule: it advises, you click in Yahoo.
 
 **The live board isn’t seeing picks.** Yahoo may not have approved Fantasy Sports API access yet, or the league key is a mock/test league that isn’t moving. You can still confirm picks on this board by hand.
 
-**Can someone else wreck my board?** Demo rooms are shared with whoever joined that room. Your Yahoo or Sleeper board is yours. The old Full Contact house board is still the one shared league room.
+**Can someone else wreck my board?** Demo rooms are shared with whoever joined that room. Your Yahoo or Sleeper board is yours.
 
 **Where do I go?** [dojo.football](https://dojo.football)

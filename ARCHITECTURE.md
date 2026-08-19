@@ -25,8 +25,10 @@ streaming sets `export const runtime = "nodejs"` (not edge).
 src/
   app/                 # App Router: pages + route handlers
     api/               # server endpoints (see "HTTP surface")
-    login/ pending/    # auth pages
-    page.tsx           # draft board host -> <DraftAssistant/>
+    login/             # Yahoo + Sleeper connect
+    page.tsx           # landing page (dojo.football)
+    app/page.tsx       # signed-in board host -> <DraftAssistant/>
+    demo/page.tsx      # anonymous demo -> <DraftAssistant variant="demo"/>
     weekly/page.tsx    # in-season host -> <WeeklyHq/>
     media/             # streams the login GIF + MP3
   adapters/            # I/O at the edges (impure)
@@ -34,7 +36,7 @@ src/
     yahoo/             # OAuth, API client, XML parsers, mock engine
   domain/              # pure logic, no I/O (snake math, recs, lineup, identity)
   persistence/         # Prisma client + shared-draft repository
-  auth/                # house-password gate, session tokens, current user
+  auth/                # session tokens, board access, demo session, current user
   config/              # scoring defaults / weights
   fixtures/            # synthetic players used before real data loads
   middleware.ts        # two-stage auth gate for every request
@@ -46,27 +48,33 @@ The hard rule: **`domain/` is pure and framework-independent** — it imports
 nothing from `app/`, `adapters/`, or Prisma, so it's trivially unit-testable.
 `adapters/` and `persistence/` own all I/O. `app/` wires them together.
 
-## Authentication (two gates)
+## Authentication
 
-`middleware.ts` runs on every non-public path and enforces two layers in order:
+There is **no house password** and **no approval step** — both were removed when the
+app became public (Draft Dojo). `middleware.ts` no longer gates access; most
+draft/demo/rankings routes are public at the edge and enforce authorization **inside
+the route** via `requireBoardAccess` (`auth/board-access.ts`).
 
-1. **House password** — `ACCESS_COOKIE_NAME` cookie, validated against
-   `APP_ACCESS_PASSWORD` (`auth/access.ts`). This is the "magic word" gate.
-2. **Yahoo identity** — `SESSION_COOKIE_NAME`, an HMAC-signed token
-   (`auth/session.ts`) carrying `{ userId, status, role, exp }`. Missing → redirect
-   to `/login?step=yahoo`. `status === "pending"` → redirect to `/pending` (only
-   `/api/me` and `/pending` are reachable).
+Identity is still a `SESSION_COOKIE_NAME` HMAC-signed token (`auth/session.ts`)
+carrying `{ userId, status, role, exp }`, set on Yahoo or Sleeper connect. New users
+are created `active` immediately; there is no `pending`/`/pending` flow (that route now
+redirects to `/app`).
 
-Public paths: `/login`, the `/api/auth/*` endpoints, `/api/yahoo/callback`, and
-`/media/*`. `/api/yahoo/auth` is allowed once the house gate passes so a logged-out
-Yahoo user can start OAuth.
+Three entry points:
+
+- **`/demo`** — anonymous. A `dojo_demo` cookie (`auth/demo-session.ts`) carries
+  `{ roomId, slot, role }`; no `User` row.
+- **Sleeper** — `POST /api/sleeper/connect` looks up the username, upserts a `User`
+  with `yahooGuid = sleeper:{userId}` and dummy tokens, and attaches the draft.
+- **Yahoo** — OAuth below.
 
 ### Yahoo OAuth (`adapters/yahoo/oauth.ts`)
 
-- Authorization-code flow. Tokens are encrypted at rest with AES-256-GCM using
-  `TOKEN_ENCRYPTION_KEY` and stored per-user on the `User` row.
-- The first user to sign in becomes `admin`/`active`; everyone else starts
-  `pending` until an admin approves them.
+- Authorization-code flow, scope `openid profile` (no email). Tokens are encrypted at
+  rest with AES-256-GCM using `TOKEN_ENCRYPTION_KEY` and stored per-user on the `User` row.
+- Every new Yahoo user is created `active` and lands on their own board
+  (`boardId = yahoo:{guid}`); no admin approval. Pre-existing house-league users keep the
+  shared `house-2026` board.
 - User identity (GUID + display name) is extracted from the `id_token`/userinfo
   with several fallbacks (`yahooGuidFromTokens`).
 - `getValidYahooAccessToken` refreshes expiring tokens. A module-level
@@ -79,27 +87,31 @@ Yahoo user can start OAuth.
 
 | Model | Purpose |
 |---|---|
-| `User` | Yahoo-authenticated member: encrypted tokens, role/status, per-user prefs (`draftSlot`, `teamName`, pins, avoids, weights, dark mode), `lastSeenAt` for presence. |
-| `LeagueDraft` | The single shared board (`id = "full-contact-2026"`): mode, team count, rounds, `picksJson`, `playersJson`, ranking `source`/`importedAt`. |
+| `User` | Yahoo- or Sleeper-authenticated member: encrypted tokens, role/status, `boardId`, Sleeper fields (`sleeperUsername`, `sleeperLeagueId`, `sleeperDraftId`), per-user prefs (`draftSlot`, `teamName`, pins, avoids, weights, dark mode), `lastSeenAt` for presence. |
+| `LeagueDraft` | A board, keyed by `id`: `house-2026` (house league), `yahoo:{guid}`, `sleeper:{draftId}`, or `demo:{uuid}`. Holds mode, team count, rounds, `picksJson`, `playersJson`, ranking `source`/`importedAt`, `leagueKey`. |
 | `DataImport` | Cached Boris Chen imports (payload + `fetchedAt` for staleness). |
 | `SyncCheckpoint` | Generic key/value+sequence store; used for mock-draft configs (`mock:<leagueKey>`) and resolved Yahoo draft snapshots. |
 | `LeagueConnection` | Per-league sync bookkeeping (last sync time / error). |
 | `OAuthCredential`, `DraftSession`, `PlayerMapping` | Legacy/earlier-iteration tables, retained by migrations. |
 
-There is exactly **one** `LeagueDraft` row — the board is league-wide shared
-state. Per-user differences (slot, pins, avoids, weights) live on `User` and are
-projected onto the shared board at read time.
+There are **many** `LeagueDraft` rows — one per board (house league, each Yahoo/Sleeper
+user, and each demo room). Persistence takes a `draftId` throughout
+(`persistence/league-draft.ts`); a user is routed to their board by `User.boardId`.
+Per-user differences (slot, pins, avoids, weights) live on `User` and are projected
+onto the resolved board at read time.
 
 ## HTTP surface (`app/api`)
 
 | Endpoint | Method | Role |
 |---|---|---|
-| `/api/auth/gate` `/login` `/logout` `/dev-login` | — | house-password gate + E2E login |
+| `/api/auth/logout` `/dev-login` | — | sign out + E2E login |
 | `/api/yahoo/auth` `/callback` `/status` `/leagues` | — | OAuth start/return, connection status, league list |
-| `/api/draft` | GET/PUT | read shared board (+ my prefs); reset/replace players/set league/apply picks |
+| `/api/sleeper/connect` | POST | username lookup, then attach a Sleeper draft to a board |
+| `/api/demo` `/api/demo/join` | GET/POST | open/resume a demo room; claim a chosen seat |
+| `/api/draft` | GET/PUT | read board for `?draftId` (+ my prefs); reset/replace players/set league/apply picks |
 | `/api/draft/pick` | POST | append pick / undo / advance one / simulate to my turn |
 | `/api/me` | GET/PUT | current user's prefs |
-| `/api/admin/users` | GET/PATCH | admin: list + approve/assign slot/rename |
+| `/api/admin/users` | GET/PATCH | admin: list + assign slot/rename (no approvals) |
 | `/api/chen` | GET | fetch (or read cached) Boris Chen import (`?scoring=half-ppr\|ppr\|standard`) |
 | `/api/yahoo/mock` | POST/GET/DELETE | start/confirm, inspect, stop a mock |
 | `/api/yahoo/sync` | GET | unified draft snapshot (mock or real Yahoo) |

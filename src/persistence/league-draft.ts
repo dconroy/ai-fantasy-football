@@ -22,7 +22,7 @@ import { normalizeTeam } from "@/domain/identity";
 import type { User } from "@prisma/client";
 import type { Position } from "@/domain";
 
-export const LEAGUE_DRAFT_ID = "full-contact-2026";
+export const LEAGUE_DRAFT_ID = "house-2026";
 
 export interface SharedDraft {
   readonly id: string;
@@ -157,8 +157,8 @@ export async function ensureFreshBoardPlayers(
   }
 }
 
-let lastByeCheck = 0;
-const BYE_CHECK_INTERVAL_MS = 30 * 60 * 1000; // per instance
+const lastByeCheck = new Map<string, number>();
+const BYE_CHECK_INTERVAL_MS = 30 * 60 * 1000; // per instance, per board
 
 /** Map a Yahoo injury status code to our coarse injuryStatus enum. */
 function mapInjuryStatus(status?: string): Player["injuryStatus"] | undefined {
@@ -192,11 +192,12 @@ function mapInjuryStatus(status?: string): Player["injuryStatus"] | undefined {
  * the pool is enriched, only touches players still missing data, and never breaks
  * board loading.
  */
-export async function ensureBoardByes(): Promise<void> {
-  if (Date.now() - lastByeCheck < BYE_CHECK_INTERVAL_MS) return;
-  lastByeCheck = Date.now();
+export async function ensureBoardByes(draftId = LEAGUE_DRAFT_ID): Promise<void> {
+  const last = lastByeCheck.get(draftId) ?? 0;
+  if (Date.now() - last < BYE_CHECK_INTERVAL_MS) return;
+  lastByeCheck.set(draftId, Date.now());
   try {
-    const current = await getOrCreateLeagueDraft();
+    const current = await getOrCreateLeagueDraft(draftId);
     // Built-in fixtures already carry byes; nothing to enrich.
     if (current.source === "Built-in mock data") return;
     const needsEnrichment = current.players.some(
@@ -257,7 +258,7 @@ export async function ensureBoardByes(): Promise<void> {
       return next;
     });
     if (!changed) return;
-    await saveSharedDraft({ players });
+    await saveSharedDraft({ draftId, players });
   } catch {
     // Enrichment is a nicety; never let it break loading the board.
   }

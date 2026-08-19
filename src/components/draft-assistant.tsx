@@ -249,6 +249,8 @@ export function DraftAssistant({
   const [demoRole, setDemoRole] = useState<"watch" | "play" | null>(
     isDemo ? "watch" : null,
   );
+  const [takenSlots, setTakenSlots] = useState<number[]>([]);
+  const [chosenSeat, setChosenSeat] = useState<number | null>(null);
   const [rankingSources, setRankingSources] = useState<
     Array<{ id: string; label: string; available: boolean }>
   >([{ id: "chen", label: "Boris Chen", available: true }]);
@@ -317,7 +319,7 @@ export function DraftAssistant({
     return path;
   }
 
-  function applyPayload(payload: DraftPayload & { demo?: { role: "watch" | "play"; slot: number | null; roomId: string } }, message?: string) {
+  function applyPayload(payload: DraftPayload & { demo?: { role: "watch" | "play"; slot: number | null; roomId: string; takenSlots?: number[] } }, message?: string) {
     const next = normalizePersisted({
       mode: payload.mode,
       draft: {
@@ -340,6 +342,7 @@ export function DraftAssistant({
     if (payload.demo) {
       setDraftId(payload.demo.roomId);
       setDemoRole(payload.demo.role);
+      if (payload.demo.takenSlots) setTakenSlots(payload.demo.takenSlots);
     }
     if (message) setNotice(message);
   }
@@ -349,7 +352,7 @@ export function DraftAssistant({
     const boot = isDemo ? "/api/demo" : "/api/draft";
     fetch(boot)
       .then((response) => (response.ok ? response.json() : null))
-      .then((payload: (DraftPayload & { demo?: { role: "watch" | "play"; slot: number | null; roomId: string } }) | null) => {
+      .then((payload: (DraftPayload & { demo?: { role: "watch" | "play"; slot: number | null; roomId: string; takenSlots?: number[] } }) | null) => {
         if (cancelled) return;
         if (payload?.draft && payload.players && payload.me) {
           if (payload.demo) setDraftId(payload.demo.roomId);
@@ -979,12 +982,24 @@ export function DraftAssistant({
     }
   }
 
-  async function joinDemo() {
-    const response = await fetch("/api/demo/join", { method: "POST" });
+  async function joinDemo(seat?: number | null) {
+    const requested = seat ?? chosenSeat ?? null;
+    const response = await fetch("/api/demo/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requested ? { slot: requested } : {}),
+    });
     const payload = (await response.json()) as DraftPayload & {
       error?: string;
-      demo?: { role: "watch" | "play"; slot: number | null; roomId: string };
+      takenSlots?: number[];
+      demo?: { role: "watch" | "play"; slot: number | null; roomId: string; takenSlots?: number[] };
     };
+    if (response.status === 409) {
+      if (payload.takenSlots) setTakenSlots(payload.takenSlots);
+      setChosenSeat(null);
+      setNotice(payload.error ?? "That seat was just taken — pick another.");
+      return;
+    }
     if (!response.ok || !payload.draft) {
       setNotice(payload.error ?? "Could not join the demo");
       return;
@@ -1120,9 +1135,41 @@ export function DraftAssistant({
             <Link className="status" href="/">Home</Link>
           )}
           {isDemo && demoRole !== "play" ? (
-            <button className="live-button" onClick={() => void joinDemo()}>
-              Join this draft
-            </button>
+            (() => {
+              const openSeats = Array.from(
+                { length: state.draft.teamCount },
+                (_, index) => index + 1,
+              ).filter((seat) => !takenSlots.includes(seat));
+              if (openSeats.length === 0) {
+                return <span className="status">Room is full</span>;
+              }
+              return (
+                <span className="demo-join">
+                  <select
+                    className="demo-seat-select"
+                    value={chosenSeat ?? ""}
+                    onChange={(event) =>
+                      setChosenSeat(
+                        event.target.value ? Number(event.target.value) : null,
+                      )
+                    }
+                  >
+                    <option value="">Pick a seat…</option>
+                    {openSeats.map((seat) => (
+                      <option key={seat} value={seat}>
+                        Seat {seat}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="live-button"
+                    onClick={() => void joinDemo()}
+                  >
+                    {chosenSeat ? `Join as seat ${chosenSeat}` : "Join next open seat"}
+                  </button>
+                </span>
+              );
+            })()
           ) : null}
           <span className={`status ${state.mode === "mock" ? "simulation" : "live"}`}>
             ●{" "}

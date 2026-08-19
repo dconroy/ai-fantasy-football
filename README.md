@@ -4,7 +4,7 @@
 
 **Recalculates your top five after every pick.**
 
-Public site: [dojo.football](https://dojo.football). Full Contact remains the private Yahoo league.
+Public site: [dojo.football](https://dojo.football).
 
 A local, desktop-first **12-team 0.5-PPR snake draft** command center. It watches the
 draft, does the math after every pick, and tells your league who to take — you still
@@ -144,16 +144,45 @@ exposes the most important live adjustments; edit the configuration file for all
 ## Yahoo developer app and OAuth
 
 1. Create an application at <https://developer.yahoo.com/apps/>.
-2. Request Fantasy Sports API access at <https://sports.yahoo.com/developer/access/>.
-3. Set the callback URL to `https://draft.conroy.dev/api/yahoo/callback`.
+2. Request **OpenID Connect** permissions — **Profile only, not Email**. `YAHOO_OAUTH_SCOPE`
+   defaults to `openid profile`.
+3. Set the callback URL to `https://dojo.football/api/yahoo/callback` (add a second redirect
+   URI for any preview/canary host, matching that host exactly).
 4. Copy only the client ID and secret into your uncommitted `.env`; never add access or
    refresh tokens to Git.
-5. Set the full 2026 league key after the league exists.
+5. For **live draft sync**, separately request Fantasy Sports API access at
+   <https://sports.yahoo.com/developer/access/>. Yahoo may return `403` until it approves.
+6. `YAHOO_LEAGUE_KEY` is **optional** — leave it unset. The app resolves the league from the
+   armed draft, the connected board, or auto-discovery.
 
 The adapter supports settings, teams, draft results, and available players. `/api/yahoo/auth`
 starts OAuth; access and refresh tokens are encrypted with AES-256-GCM before storage in
-Postgres. Yahoo may return `403` until the application is approved for Fantasy Sports. See
-`docs/YAHOO_LIMITATIONS.md`.
+Postgres. See `docs/YAHOO_LIMITATIONS.md`.
+
+## Sleeper
+
+Sleeper needs **no setup** — no developer app, no OAuth, no API key, no env var. It uses the
+public `api.sleeper.app` read API. Users connect on `/login` by entering their Sleeper
+username; the app lists their current-season leagues/drafts and follows the picks. It never
+submits a pick in Sleeper.
+
+## Experts (ranking sources)
+
+The **Expert** dropdown offers three sources; **Scoring** (0.5 PPR / PPR / standard) is
+independent:
+
+| Expert | Setup |
+|---|---|
+| **Boris Chen** | Default. Public CSVs, no key. |
+| **FF Calculator ADP** | Market ADP, no key. |
+| **FantasyPros ECR** | Hidden until `FANTASYPROS_API_KEY` is set. Request an API key from FantasyPros, add it to `.env` (and to your Vercel env vars, then redeploy). |
+
+## Public demo
+
+`/demo` is anonymous — no account. A visitor starts as a spectator in a paused room, then
+picks an open seat (1–12) to start the clock; robots fill the rest and the room pauses on
+every human turn. When a room fills, the next visitor gets a fresh room (a handful can run at
+once), and completed rooms are recycled after ~45 minutes.
 
 ## Project layout
 

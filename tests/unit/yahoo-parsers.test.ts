@@ -208,7 +208,7 @@ describe("parseLeagueMeta", () => {
   it("extracts league name, current week, and roster slot counts", () => {
     const body = parse(`
       <fantasy_content><league>
-        <name>Full Contact</name><current_week>7</current_week>
+        <name>Test League</name><current_week>7</current_week>
         <settings>
           <roster_positions>
             <roster_position><position>QB</position><count>1</count></roster_position>
@@ -223,7 +223,7 @@ describe("parseLeagueMeta", () => {
         </settings>
       </league></fantasy_content>`);
     const meta = parseLeagueMeta(body);
-    expect(meta.name).toBe("Full Contact");
+    expect(meta.name).toBe("Test League");
     expect(meta.currentWeek).toBe(7);
     expect(meta.rosterSlots).toMatchObject({ QB: 1, RB: 2, "W/R/T": 1, BN: 5 });
   });

@@ -8,7 +8,7 @@ import {
   sessionCookieOptions,
   sessionTokenFor,
 } from "@/auth/current-user";
-import { userPrefs } from "@/persistence/league-draft";
+import { LEAGUE_DRAFT_ID, userPrefs } from "@/persistence/league-draft";
 import type { StrategyWeights } from "@/domain";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ function toMe(user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>) {
     yahooGuid: user.yahooGuid,
     boardId: user.sleeperDraftId
       ? `sleeper:${user.sleeperDraftId}`
-      : user.boardId ?? "full-contact-2026",
+      : user.boardId ?? LEAGUE_DRAFT_ID,
     ...prefs,
   };
 }

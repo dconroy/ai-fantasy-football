@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import {
   DEMO_COOKIE_NAME,
   createDemoToken,
@@ -9,12 +9,27 @@ import { draftStateFor, getOrCreateLeagueDraft } from "@/persistence/league-draf
 import {
   claimDemoSeat,
   findOrCreateOpenDemoRoom,
+  takenSeatsFor,
 } from "@/persistence/demo-rooms";
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+function parseSlot(value: unknown): number | null {
+  if (value == null) return null;
+  const slot = Number(value);
+  return Number.isInteger(slot) && slot > 0 ? slot : null;
+}
+
+export async function POST(request: NextRequest) {
+  let requestedSlot: number | null = null;
+  try {
+    const body = (await request.json().catch(() => null)) as { slot?: unknown } | null;
+    requestedSlot = parseSlot(body?.slot);
+  } catch {
+    requestedSlot = null;
+  }
+
   try {
     const existing = await getDemoClaims();
     let roomId = existing?.roomId;
@@ -23,11 +38,22 @@ export async function POST() {
     }
     let claimed;
     try {
-      claimed = await claimDemoSeat(roomId);
+      claimed = await claimDemoSeat(roomId, requestedSlot);
     } catch (error) {
-      if (!(error instanceof Error) || !/full/i.test(error.message)) throw error;
-      roomId = (await findOrCreateOpenDemoRoom()).shared.id;
-      claimed = await claimDemoSeat(roomId);
+      const message = error instanceof Error ? error.message : "";
+      // The room filled up while they were deciding: move them to a fresh room.
+      // A specific-seat collision should surface so they can pick again.
+      if (/full/i.test(message)) {
+        roomId = (await findOrCreateOpenDemoRoom()).shared.id;
+        claimed = await claimDemoSeat(roomId, requestedSlot);
+      } else if (/taken/i.test(message)) {
+        return NextResponse.json(
+          { error: message, takenSlots: await takenSeatsFor(roomId) },
+          { status: 409 },
+        );
+      } else {
+        throw error;
+      }
     }
     const shared = await getOrCreateLeagueDraft(claimed.shared.id);
     const token = await createDemoToken({
@@ -50,7 +76,12 @@ export async function POST() {
         weights: DEFAULT_STRATEGY_WEIGHTS,
         darkMode: true,
       },
-      demo: { role: "play", slot: claimed.slot, roomId: shared.id },
+      demo: {
+        role: "play",
+        slot: claimed.slot,
+        roomId: shared.id,
+        takenSlots: await takenSeatsFor(shared.id),
+      },
     });
     response.cookies.set(DEMO_COOKIE_NAME, token, demoCookieOptions());
     return response;

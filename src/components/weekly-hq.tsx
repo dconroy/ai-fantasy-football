@@ -244,7 +244,7 @@ export function WeeklyHq() {
         <div className="brand-lockup">
           <div className="brand-copy">
             <p className="eyebrow">
-              {data ? `${data.league.name} · Week ${week ?? "—"}` : "Full Contact · 2026"}
+              {data ? `${data.league.name} · Week ${week ?? "—"}` : "Draft Dojo · 2026"}
             </p>
             <h1>Weekly HQ</h1>
             <p className="brand-tagline">

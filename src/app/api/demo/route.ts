@@ -6,7 +6,7 @@ import {
   getDemoClaims,
 } from "@/auth/demo-session";
 import { draftStateFor, getOrCreateLeagueDraft } from "@/persistence/league-draft";
-import { findOrCreateOpenDemoRoom } from "@/persistence/demo-rooms";
+import { findOrCreateOpenDemoRoom, takenSeatsFor } from "@/persistence/demo-rooms";
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
 
 export const runtime = "nodejs";
@@ -35,7 +35,12 @@ export async function GET() {
         draft: draftStateFor(shared, existing.slot ?? 1),
         members: [],
         me: demoMe(existing.slot, existing.role),
-        demo: { role: existing.role, slot: existing.slot, roomId: existing.roomId },
+        demo: {
+          role: existing.role,
+          slot: existing.slot,
+          roomId: existing.roomId,
+          takenSlots: await takenSeatsFor(existing.roomId),
+        },
       });
     }
     const { shared } = await findOrCreateOpenDemoRoom();
@@ -49,7 +54,12 @@ export async function GET() {
       draft: draftStateFor(shared, 1),
       members: [],
       me: demoMe(null, "watch"),
-      demo: { role: "watch", slot: null, roomId: shared.id },
+      demo: {
+        role: "watch",
+        slot: null,
+        roomId: shared.id,
+        takenSlots: await takenSeatsFor(shared.id),
+      },
     });
     response.cookies.set(DEMO_COOKIE_NAME, token, demoCookieOptions());
     return response;

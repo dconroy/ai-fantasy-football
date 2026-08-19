@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const { draftId, user, demo } = await requireBoardAccess(request);
     if (user) await touchLastSeen(user);
     await ensureFreshBoardPlayers(draftId);
-    await ensureBoardByes();
+    await ensureBoardByes(draftId);
     return NextResponse.json(await boardPayload(draftId, user, demo));
   } catch (error) {
     if (error instanceof AuthError) {

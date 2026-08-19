@@ -122,7 +122,18 @@ export async function findOrCreateOpenDemoRoom(): Promise<{
   return { shared: created.shared, config };
 }
 
-export async function claimDemoSeat(roomId: string): Promise<{
+/** Seats already claimed by a human in this demo room. */
+export async function takenSeatsFor(roomId: string): Promise<number[]> {
+  const shared = await getOrCreateLeagueDraft(roomId);
+  if (!shared.leagueKey) return [];
+  const loaded = await loadMockConfig(shared.leagueKey);
+  return [...(loaded?.humanSlots ?? [])].sort((a, b) => a - b);
+}
+
+export async function claimDemoSeat(
+  roomId: string,
+  requestedSlot?: number | null,
+): Promise<{
   shared: SharedDraft;
   slot: number;
   config: MockDraftConfig;
@@ -132,13 +143,29 @@ export async function claimDemoSeat(roomId: string): Promise<{
   const loaded = await loadMockConfig(shared.leagueKey);
   if (!loaded) throw new Error("Demo room is not ready");
   const taken = new Set(loaded.humanSlots ?? []);
+
   let slot = 0;
-  for (let seat = 1; seat <= shared.teamCount; seat += 1) {
-    if (!taken.has(seat)) {
-      slot = seat;
-      break;
+  if (requestedSlot != null) {
+    if (
+      !Number.isInteger(requestedSlot) ||
+      requestedSlot < 1 ||
+      requestedSlot > shared.teamCount
+    ) {
+      throw new Error(`Seat ${requestedSlot} is not a valid slot`);
+    }
+    if (taken.has(requestedSlot)) {
+      throw new Error(`Seat ${requestedSlot} is already taken`);
+    }
+    slot = requestedSlot;
+  } else {
+    for (let seat = 1; seat <= shared.teamCount; seat += 1) {
+      if (!taken.has(seat)) {
+        slot = seat;
+        break;
+      }
     }
   }
+
   if (!slot) throw new Error("This demo room is full");
   const claimed = claimHumanSlot(loaded, slot);
   const started = startMockClock(claimed);
