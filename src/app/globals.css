@@ -915,7 +915,13 @@ h2 {
 }
 
 .table-row.avoided {
-  opacity: .48;
+  opacity: .72;
+}
+
+.table-row.avoided .player-cell-copy strong,
+.table-row.avoided > span:first-child {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
 }
 
 .row-actions {

@@ -461,13 +461,10 @@ export function DraftAssistant() {
     )
     .filter((player) => avoidFilter !== "only" || avoids.includes(player.id))
     .sort((a, b) => {
-      const avoidDelta =
-        Number(avoids.includes(a.id)) - Number(avoids.includes(b.id));
       const pinDelta =
         Number((state.pins ?? []).includes(b.id)) -
         Number((state.pins ?? []).includes(a.id));
       return (
-        avoidDelta ||
         pinDelta ||
         (a.chenRank ?? Number.MAX_SAFE_INTEGER) -
           (b.chenRank ?? Number.MAX_SAFE_INTEGER)
