@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { fetchChenPprImport, readCachedChenImport } from "@/adapters/chen/server-cache";
+import { parseChenScoring } from "@/adapters/chen/boris-chen";
+import { fetchChenImport, readCachedChenImport } from "@/adapters/chen/server-cache";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const cachedOnly = new URL(request.url).searchParams.get("cached") === "true";
+  const params = new URL(request.url).searchParams;
+  const cachedOnly = params.get("cached") === "true";
+  const scoring = parseChenScoring(params.get("scoring"));
   try {
     const result = cachedOnly
-      ? await readCachedChenImport()
-      : await fetchChenPprImport();
+      ? await readCachedChenImport(scoring)
+      : await fetchChenImport(scoring);
     if (!result) {
       return NextResponse.json(
         { error: "No cached Chen import is available." },

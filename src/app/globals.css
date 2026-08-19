@@ -848,9 +848,43 @@ h2 {
 }
 
 .data-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 7px 14px 0;
   color: var(--muted);
   font-size: 9px;
+}
+
+.data-source p {
+  margin: 0;
+  min-width: 0;
+}
+
+.scoring-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scoring-toggle select {
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .filters {

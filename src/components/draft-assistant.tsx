@@ -18,7 +18,12 @@ import {
 } from "@/domain";
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for the dormant CSV-import fallback (importFile)
-import { parseChenCsv } from "@/adapters/chen/boris-chen";
+import {
+  CHEN_SCORING,
+  parseChenCsv,
+  scoringFromSource,
+  type ChenScoring,
+} from "@/adapters/chen/boris-chen";
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
 import { resolvePlayerIdentity } from "@/domain/identity";
 
@@ -262,6 +267,7 @@ export function DraftAssistant() {
   const [briefStatus, setBriefStatus] = useState<"idle" | "loading" | "ready">(
     "idle",
   );
+  const [chenBusy, setChenBusy] = useState(false);
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
@@ -824,51 +830,33 @@ export function DraftAssistant() {
     await mutateDraft(
       "/api/draft",
       {
-        action: "players",
-        players,
-        importedAt: parsed.importedAt,
-        source: parsed.source,
+        action: "chen",
+        chen: parsed,
       },
       `Imported ${players.length} players; ${parsed.warnings.length} warning(s).`,
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function fetchChen() {
-    setNotice("Loading public Chen PPR data…");
+  async function fetchChen(scoring: ChenScoring) {
+    if (chenBusy) return;
+    setChenBusy(true);
+    setNotice(`Loading Boris Chen ${CHEN_SCORING[scoring].label}…`);
     try {
-      const response = await fetch("/api/chen");
+      const response = await fetch(`/api/chen?scoring=${scoring}`);
       const parsed = await response.json();
       if (!response.ok) throw new Error(parsed.error ?? "Import failed");
-      const players: Player[] = parsed.players.map(
-        (player: {
-          sourceId: string; name: string; position: Position; team?: string;
-          overallRank: number; tier: number; byeWeek?: number; adp?: number;
-        }) => ({
-          id: player.sourceId,
-          name: player.name,
-          position: player.position,
-          team: player.team ?? "FA",
-          chenRank: player.overallRank,
-          chenTier: player.tier,
-          byeWeek: player.byeWeek,
-          adp: player.adp,
-        }),
-      );
+      if (!parsed.players?.length) throw new Error("Chen import contained no players");
       await mutateDraft(
         "/api/draft",
-        {
-          action: "players",
-          players,
-          importedAt: parsed.importedAt,
-          source: parsed.source,
-        },
-        `Loaded ${players.length} current source records.`,
+        { action: "chen", chen: parsed },
+        `Loaded ${parsed.players.length} ${CHEN_SCORING[scoring].label} ranks.`,
       );
     } catch (error) {
       setNotice(
-        `${error instanceof Error ? error.message : "Chen fetch failed"}. Use manual CSV import.`,
+        `${error instanceof Error ? error.message : "Chen fetch failed"}. Try again or import a CSV.`,
       );
+    } finally {
+      setChenBusy(false);
     }
   }
 
@@ -1704,10 +1692,30 @@ export function DraftAssistant() {
               <h2>Best available <span>{available.length}</span></h2>
             </div>
           </div>
-          <p className="data-source">
-            {state.source} · {state.importedAt}
-            {!state.source?.startsWith("Built-in") && " · auto-updated"}
-          </p>
+          <div className="data-source">
+            <p>
+              {state.source} · {state.importedAt}
+              {!state.source?.startsWith("Built-in") && " · auto-updated"}
+            </p>
+            <label className="scoring-toggle">
+              Chen list
+              <select
+                value={scoringFromSource(state.source)}
+                disabled={chenBusy}
+                onChange={(event) => {
+                  const next = event.target.value as ChenScoring;
+                  if (next === scoringFromSource(state.source)) return;
+                  void fetchChen(next);
+                }}
+              >
+                {(Object.keys(CHEN_SCORING) as ChenScoring[]).map((value) => (
+                  <option key={value} value={value}>
+                    {CHEN_SCORING[value].label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="filters">
             <input
               placeholder="Search players or teams"

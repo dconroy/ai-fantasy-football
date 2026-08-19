@@ -19,6 +19,49 @@ export interface ChenImport {
   importedAt: string;
   source: string;
   warnings: string[];
+  scoring?: ChenScoring;
+}
+
+export const CHEN_SCORING = {
+  "half-ppr": {
+    label: "0.5 PPR",
+    url:
+      process.env.CHEN_HALF_PPR_CSV_URL ??
+      "https://s3-us-west-1.amazonaws.com/fftiers/out/weekly-ALL-HALF-PPR.csv",
+    cacheSource: "boris-chen-half-ppr",
+  },
+  ppr: {
+    label: "PPR",
+    url:
+      process.env.CHEN_PPR_CSV_URL ??
+      "https://s3-us-west-1.amazonaws.com/fftiers/out/weekly-ALL-PPR.csv",
+    cacheSource: "boris-chen-ppr",
+  },
+  standard: {
+    label: "Standard",
+    url:
+      process.env.CHEN_STANDARD_CSV_URL ??
+      "https://s3-us-west-1.amazonaws.com/fftiers/out/weekly-ALL.csv",
+    cacheSource: "boris-chen-standard",
+  },
+} as const;
+
+export type ChenScoring = keyof typeof CHEN_SCORING;
+export const DEFAULT_CHEN_SCORING: ChenScoring = "half-ppr";
+
+export function scoringFromSource(source?: string | null): ChenScoring {
+  const text = source ?? "";
+  if (/half|0\.5/i.test(text)) return "half-ppr";
+  if (/weekly-ALL\.csv/i.test(text) || (/standard/i.test(text) && !/ppr/i.test(text))) {
+    return "standard";
+  }
+  if (/ppr/i.test(text)) return "ppr";
+  return DEFAULT_CHEN_SCORING;
+}
+
+export function parseChenScoring(value?: string | null): ChenScoring {
+  if (value === "ppr" || value === "standard" || value === "half-ppr") return value;
+  return DEFAULT_CHEN_SCORING;
 }
 
 const aliases = {

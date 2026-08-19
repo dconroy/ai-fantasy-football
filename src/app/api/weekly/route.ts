@@ -3,8 +3,9 @@ import { AuthError, requireActiveUser } from "@/auth/current-user";
 import { getValidYahooAccessToken } from "@/adapters/yahoo/oauth";
 import { YahooApi } from "@/adapters/yahoo/yahoo-api";
 import type { YahooFreeAgent, YahooRosterPlayer } from "@/adapters/yahoo/parsers";
+import { scoringFromSource, type ChenScoring } from "@/adapters/chen/boris-chen";
 import {
-  fetchChenPprImport,
+  fetchChenImport,
   readCachedChenImport,
 } from "@/adapters/chen/server-cache";
 import { getOrCreateLeagueDraft, userPrefs } from "@/persistence/league-draft";
@@ -23,19 +24,19 @@ export const runtime = "nodejs";
 
 const CHEN_MAX_AGE_MS = 4 * 60 * 60 * 1_000;
 
-async function chenPlayers(): Promise<{
+async function chenPlayers(scoring: ChenScoring): Promise<{
   players: Player[];
   importedAt: string;
   source: string;
 }> {
-  let cached = await readCachedChenImport();
+  let cached = await readCachedChenImport(scoring);
   const stale =
     !cached ||
     Number.isNaN(Date.parse(cached.importedAt)) ||
     Date.now() - Date.parse(cached.importedAt) > CHEN_MAX_AGE_MS;
   if (stale) {
     try {
-      cached = await fetchChenPprImport();
+      cached = await fetchChenImport(scoring);
     } catch {
       // Keep whatever cache we have; weekly view degrades to Yahoo-only data.
     }
@@ -123,7 +124,7 @@ export async function GET(request: Request) {
     const [teams, meta, chen] = await Promise.all([
       api.getTeams(leagueKey),
       api.getLeagueMeta(leagueKey),
-      chenPlayers(),
+      chenPlayers(scoringFromSource(shared.source)),
     ]);
     const myTeam = teams.find((team) => team.isMine);
     if (!myTeam) {

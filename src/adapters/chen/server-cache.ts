@@ -1,13 +1,20 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/persistence/prisma";
-import { parseChenCsv, type ChenImport } from "./boris-chen";
+import {
+  CHEN_SCORING,
+  DEFAULT_CHEN_SCORING,
+  parseChenCsv,
+  parseChenScoring,
+  type ChenImport,
+  type ChenScoring,
+} from "./boris-chen";
 
-const CACHE_SOURCE = "boris-chen-ppr";
-
-export async function readCachedChenImport(): Promise<ChenImport | null> {
+export async function readCachedChenImport(
+  scoring: ChenScoring = DEFAULT_CHEN_SCORING,
+): Promise<ChenImport | null> {
   try {
     const cached = await prisma.dataImport.findFirst({
-      where: { source: CACHE_SOURCE },
+      where: { source: CHEN_SCORING[scoring].cacheSource },
       orderBy: { fetchedAt: "desc" },
     });
     return cached ? (JSON.parse(cached.payload) as ChenImport) : null;
@@ -25,11 +32,12 @@ const DEFAULT_MAX_AGE_MS = 6 * 60 * 60 * 1000; // 6 hours
  */
 export async function getFreshChenImport(
   maxAgeMs: number = DEFAULT_MAX_AGE_MS,
+  scoring: ChenScoring = DEFAULT_CHEN_SCORING,
 ): Promise<ChenImport | null> {
   let cachedRow: { payload: string; fetchedAt: Date } | null = null;
   try {
     cachedRow = await prisma.dataImport.findFirst({
-      where: { source: CACHE_SOURCE },
+      where: { source: CHEN_SCORING[scoring].cacheSource },
       orderBy: { fetchedAt: "desc" },
       select: { payload: true, fetchedAt: true },
     });
@@ -44,31 +52,34 @@ export async function getFreshChenImport(
     }
   }
   try {
-    return await fetchChenPprImport();
+    return await fetchChenImport(scoring);
   } catch {
     return cachedRow ? (JSON.parse(cachedRow.payload) as ChenImport) : null;
   }
 }
 
-export async function fetchChenPprImport(): Promise<ChenImport> {
-  const url =
-    process.env.CHEN_PPR_CSV_URL ??
-    "https://s3-us-west-1.amazonaws.com/fftiers/out/weekly-ALL-PPR.csv";
+export async function fetchChenImport(
+  scoring: ChenScoring = DEFAULT_CHEN_SCORING,
+): Promise<ChenImport> {
+  const format = CHEN_SCORING[scoring];
   try {
-    const response = await fetch(url, {
+    const response = await fetch(format.url, {
       cache: "no-store",
       signal: AbortSignal.timeout(8_000),
       headers: { Accept: "text/csv,text/plain;q=0.9" },
     });
     if (!response.ok) throw new Error(`Source returned HTTP ${response.status}`);
     const csv = await response.text();
-    const imported = parseChenCsv(csv, url);
+    const imported = {
+      ...parseChenCsv(csv, `Boris Chen · ${format.label}`),
+      scoring,
+    };
     if (imported.players.length === 0) {
       throw new Error("Source contained no usable players");
     }
     await prisma.dataImport.create({
       data: {
-        source: CACHE_SOURCE,
+        source: format.cacheSource,
         playerCount: imported.players.length,
         checksum: createHash("sha256").update(csv).digest("hex"),
         payload: JSON.stringify(imported),
@@ -76,10 +87,11 @@ export async function fetchChenPprImport(): Promise<ChenImport> {
     });
     return imported;
   } catch (error) {
-    const cached = await readCachedChenImport();
+    const cached = await readCachedChenImport(scoring);
     if (cached) {
       return {
         ...cached,
+        scoring,
         source: `${cached.source} (cached after fetch failure)`,
         warnings: [
           ...cached.warnings,
@@ -89,4 +101,9 @@ export async function fetchChenPprImport(): Promise<ChenImport> {
     }
     throw error;
   }
+}
+
+/** @deprecated use fetchChenImport */
+export async function fetchChenPprImport(): Promise<ChenImport> {
+  return fetchChenImport(parseChenScoring("ppr"));
 }

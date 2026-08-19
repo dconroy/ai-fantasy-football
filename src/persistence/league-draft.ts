@@ -10,6 +10,7 @@ import {
 } from "@/domain";
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
 import type { ChenImport } from "@/adapters/chen/boris-chen";
+import { scoringFromSource } from "@/adapters/chen/boris-chen";
 import {
   getFreshChenImport,
   readCachedChenImport,
@@ -134,9 +135,10 @@ export async function ensureFreshBoardPlayers(): Promise<void> {
     const current = await getOrCreateLeagueDraft();
     if (current.picks.length > 0) return;
     const isSynthetic = current.source === "Built-in mock data";
+    const scoring = scoringFromSource(current.source);
     const fresh = isSynthetic
       ? await freshPlayersFromChen()
-      : shapeChenImport(await getFreshChenImport());
+      : shapeChenImport(await getFreshChenImport(undefined, scoring));
     if (!fresh) return;
     const changed =
       fresh.importedAt !== current.importedAt ||
@@ -402,6 +404,52 @@ export async function replacePlayers(
     importedAt,
     picks: [],
     mode: "mock",
+  });
+}
+
+/** Apply a Chen list. Empty boards are replaced; live boards only get ranks remapped. */
+export async function applyChenImport(imported: ChenImport): Promise<SharedDraft> {
+  const incoming = shapeChenImport(imported);
+  if (!incoming) throw new Error("Chen import contained no players");
+  const current = await getOrCreateLeagueDraft();
+  if (current.picks.length === 0) {
+    return saveSharedDraft({
+      players: incoming.players,
+      source: incoming.source,
+      importedAt: incoming.importedAt,
+    });
+  }
+
+  const byId = new Map(incoming.players.map((player) => [player.id, player]));
+  const byKey = new Map(
+    incoming.players.map((player) => [playerMetaKey(player.name, player.position), player]),
+  );
+  const merged = current.players.map((player) => {
+    const hit =
+      byId.get(player.id) ??
+      byKey.get(playerMetaKey(player.name, player.position));
+    if (!hit) return player;
+    return {
+      ...player,
+      chenRank: hit.chenRank,
+      chenTier: hit.chenTier,
+      adp: hit.adp ?? player.adp,
+    };
+  });
+  const seen = new Set(
+    merged.map((player) => playerMetaKey(player.name, player.position)),
+  );
+  for (const player of incoming.players) {
+    const key = playerMetaKey(player.name, player.position);
+    if (!seen.has(key)) {
+      merged.push(player);
+      seen.add(key);
+    }
+  }
+  return saveSharedDraft({
+    players: merged,
+    source: incoming.source,
+    importedAt: incoming.importedAt,
   });
 }
 

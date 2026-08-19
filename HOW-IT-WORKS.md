@@ -43,6 +43,10 @@ recalculates the five best players for **your** roster, based on Boris Chen's
 tier rankings plus what your team actually needs. Each one has a plain-English
 reason. When in doubt, take the #1.
 
+Chen publishes three lists. Ours is **0.5 PPR**, which is the default. The
+dropdown next to Best available can load full PPR or standard if you ever need
+to compare.
+
 ## "YOU'RE ON THE CLOCK"
 
 When the draft reaches your slot, the top bar turns bright green and pulses,

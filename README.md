@@ -4,12 +4,13 @@ Not a developer? Read [HOW-IT-WORKS.md](HOW-IT-WORKS.md) instead — it explains
 the whole app in plain English. Building on it? See
 [ARCHITECTURE.md](ARCHITECTURE.md) for the technical design.
 
-A local, desktop-first 12-team full-PPR snake draft assistant. The first version
+A local, desktop-first 12-team 0.5-PPR snake draft assistant. The first version
 focuses on a reliable simulation and a transparent, framework-independent
 recommendation engine. It never submits a draft pick to Yahoo.
 
-The built-in rankings are synthetic demonstration data, not 2026 advice. Import
-a current Boris Chen PPR CSV before relying on rankings.
+The built-in rankings are synthetic demonstration data, not 2026 advice. The
+board loads Boris Chen's 0.5 PPR list by default and can switch to PPR or
+standard.
 
 ## What works
 
@@ -26,7 +27,7 @@ a current Boris Chen PPR CSV before relying on rankings.
 - Local storage preserves the active draft immediately. Prisma/Neon Postgres
   synchronizes the active session across devices.
 - Import CSV manually or ask the server adapter to retrieve/cache the configured
-  public Chen PPR file. Source and import timestamps are visible.
+  public Chen list (0.5 PPR by default). Source and import timestamps are visible.
 - Export draft results as JSON or CSV. Light and dark themes are included.
 - Automatic selection is unavailable and disabled.
 
@@ -59,10 +60,11 @@ npm run test:e2e
 
 `src/adapters/chen/boris-chen.ts` is the replaceable source adapter. It
 preserves tier, position-specific rank, overall rank, team, bye, and optional
-ADP from supported CSV columns. The fetch route uses the public URL configured
-by `CHEN_PPR_CSV_URL`, stores only successful responses in Postgres, and falls
-back to the last successful cache. It does not scrape pages, bypass access
-controls, or work around source restrictions.
+ADP from supported CSV columns. The fetch route uses the public URLs configured
+by `CHEN_HALF_PPR_CSV_URL` (default), `CHEN_PPR_CSV_URL`, and
+`CHEN_STANDARD_CSV_URL`, stores only successful responses in Postgres, and
+falls back to the last successful cache. It does not scrape pages, bypass
+access controls, or work around source restrictions.
 
 Because source availability and schema can change, manual CSV import remains the
 safe fallback. Confirm that your use of any third-party data complies with its

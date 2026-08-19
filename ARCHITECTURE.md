@@ -9,7 +9,7 @@ how requests flow, and where each responsibility lives.
 |---|---|
 | Framework | Next.js 15 (App Router) + React 19, TypeScript |
 | Styling | Tailwind v4 (PostCSS) + hand-written `globals.css` |
-| Data source (rankings) | Boris Chen weekly PPR tiers (CSV) |
+| Data source (rankings) | Boris Chen weekly tiers (0.5 PPR default; PPR + standard available) |
 | Data source (league) | Yahoo Fantasy API v2 (read-only, XML) |
 | ORM / DB | Prisma 6 → Postgres (Neon in prod) |
 | XML / CSV parsing | `fast-xml-parser`, `papaparse` |
@@ -100,7 +100,7 @@ projected onto the shared board at read time.
 | `/api/draft/pick` | POST | append pick / undo / advance one / simulate to my turn |
 | `/api/me` | GET/PUT | current user's prefs |
 | `/api/admin/users` | GET/PATCH | admin: list + approve/assign slot/rename |
-| `/api/chen` | GET | fetch (or read cached) Boris Chen import |
+| `/api/chen` | GET | fetch (or read cached) Boris Chen import (`?scoring=half-ppr\|ppr\|standard`) |
 | `/api/yahoo/mock` | POST/GET/DELETE | start/confirm, inspect, stop a mock |
 | `/api/yahoo/sync` | GET | unified draft snapshot (mock or real Yahoo) |
 | `/api/weekly` | GET | in-season roster + optimal lineup + waivers + activity |
@@ -128,17 +128,20 @@ calls `ensureFreshBoardPlayers()` (throttled) — see "Rankings pipeline".
 ## Rankings pipeline (Boris Chen)
 
 1. `adapters/chen/server-cache.ts`
-   - `fetchChenPprImport()` pulls the PPR CSV (`CHEN_PPR_CSV_URL`), parses via
-     `boris-chen.ts`, and writes a `DataImport` row (payload + checksum).
-   - `getFreshChenImport(maxAgeMs = 6h)` serves the cached row if fresh, else
-     fetches live, else falls back to the stale cache.
+   - `fetchChenImport(scoring)` pulls the matching CSV (0.5 PPR by default),
+     parses via `boris-chen.ts`, and writes a `DataImport` row keyed by format
+     (`boris-chen-half-ppr` / `boris-chen-ppr` / `boris-chen-standard`).
+   - `getFreshChenImport(maxAgeMs = 6h, scoring)` serves the cached row if
+     fresh, else fetches live, else falls back to the stale cache.
 2. `persistence/league-draft.ts`
    - On board creation, seeds `playersJson` from `getFreshChenImport()` (live if
      the cache is empty), else synthetic `MOCK_PLAYERS`.
    - `ensureFreshBoardPlayers()` (called from `/api/draft` GET, throttled to once
      / 10 min per instance) refreshes the board's players **only while
      `picks.length === 0`**, so rankings never shift mid-draft. Admins can force a
-     refresh via `/api/chen` ("Refresh now") or upload a CSV.
+     refresh via `/api/chen?scoring=` or the Best available scoring toggle.
+     Switching formats remaps `chenRank` / `chenTier` / ADP on existing players
+     and does not clear picks.
 3. **Player metadata backfill** — Chen's tier CSV has no team, bye, headshot, or
    ownership columns, so `adapters/yahoo/player-meta.ts` pulls the top ~300 players
    from Yahoo (team + full team name + `bye_weeks` + `image_url` + `percent_owned` +
@@ -299,7 +302,7 @@ is advisory — the user makes actual moves in Yahoo. XML parsing lives in
 | `APP_ACCESS_PASSWORD` | house-password gate |
 | `TOKEN_ENCRYPTION_KEY` | AES-256-GCM key for Yahoo tokens at rest |
 | `YAHOO_CLIENT_ID` / `YAHOO_CLIENT_SECRET` / `YAHOO_REDIRECT_URI` | OAuth app |
-| `CHEN_PPR_CSV_URL` | override Boris Chen CSV source |
+| `CHEN_HALF_PPR_CSV_URL` / `CHEN_PPR_CSV_URL` / `CHEN_STANDARD_CSV_URL` | override Boris Chen CSV sources |
 | `E2E_LOGIN_SECRET` | bypass token for Playwright login |
 
 Rotating `TOKEN_ENCRYPTION_KEY` invalidates stored tokens; users simply re-auth

@@ -7,12 +7,14 @@ import {
   ensureFreshBoardPlayers,
   getOrCreateLeagueDraft,
   listMemberSeats,
+  applyChenImport,
   replacePlayers,
   resetSharedDraft,
   saveSharedDraft,
   touchLastSeen,
   userPrefs,
 } from "@/persistence/league-draft";
+import type { ChenImport } from "@/adapters/chen/boris-chen";
 import type { DraftState, Player } from "@/domain";
 
 export const runtime = "nodejs";
@@ -55,10 +57,11 @@ export async function PUT(request: Request) {
   try {
     await requireActiveUser();
     const body = (await request.json().catch(() => null)) as {
-      action?: "reset" | "players" | "leagueKey" | "picks";
+      action?: "reset" | "players" | "chen" | "leagueKey" | "picks";
       mode?: "mock" | "live";
       leagueKey?: string | null;
       players?: Player[];
+      chen?: ChenImport;
       picks?: DraftState["picks"];
       importedAt?: string;
       source?: string;
@@ -70,6 +73,8 @@ export async function PUT(request: Request) {
         body.mode === "live" ? "live" : "mock",
         body.leagueKey,
       );
+    } else if (body?.action === "chen" && body.chen?.players?.length) {
+      await applyChenImport(body.chen);
     } else if (body?.action === "players" && Array.isArray(body.players)) {
       await replacePlayers(
         body.players,
