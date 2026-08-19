@@ -16,15 +16,19 @@ export async function GET() {
       joinableRooms: joinable.length,
       totalOpenSeats,
       activePlayers,
-      rooms: joinable.map((room, index) => ({
+      rooms: all.map((room, index) => ({
         id: room.id,
         name: `Room ${index + 1}`,
         totalSeats: room.totalSeats,
         activeSeats: room.activeSeats,
         openSeats: room.openSeats,
+        openSeatList: room.openSeatList,
+        scoring: room.scoring,
+        rounds: room.rounds,
         picks: room.picks,
         totalPicks: room.totalPicks,
         started: room.started,
+        complete: room.complete,
       })),
     });
   } catch {

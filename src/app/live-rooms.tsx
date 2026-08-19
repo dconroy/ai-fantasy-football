@@ -9,9 +9,12 @@ interface Room {
   totalSeats: number;
   activeSeats: number;
   openSeats: number;
+  scoring: "standard" | "half-ppr" | "ppr";
+  rounds: number;
   picks: number;
   totalPicks: number;
   started: boolean;
+  complete: boolean;
 }
 
 interface RoomsResponse {
@@ -50,7 +53,7 @@ export function LiveRooms() {
     };
   }, []);
 
-  const joinable = data?.rooms ?? [];
+  const joinable = (data?.rooms ?? []).filter((room) => !room.complete);
   const activePlayers = data?.activePlayers ?? 0;
 
   return (
@@ -76,7 +79,12 @@ export function LiveRooms() {
               <Link className="live-room" href={roomHref(room.id)}>
                 <span className="live-room-name">{room.name}</span>
                 <span className="live-room-seats">
-                  {room.openSeats} open · {room.activeSeats}/{room.totalSeats} seated
+                        {room.scoring === "half-ppr"
+                          ? "Half PPR"
+                          : room.scoring === "ppr"
+                            ? "Full PPR"
+                            : "Standard"}{" "}
+                        · {room.totalSeats} teams · {room.openSeats} open
                 </span>
                 <span className="live-room-join">
                   {room.started ? "Drafting" : "Waiting"} · Join →
@@ -92,7 +100,7 @@ export function LiveRooms() {
       )}
 
       <Link className="live-rooms-cta" href="/demo">
-        {joinable.length > 0 ? "Join the next open seat" : "Start a demo draft"} →
+        {joinable.length > 0 ? "Browse live drafts" : "Create a demo draft"} →
       </Link>
     </section>
   );

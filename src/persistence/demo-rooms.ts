@@ -3,18 +3,27 @@ import { prisma } from "@/persistence/prisma";
 import {
   getOrCreateLeagueDraft,
   saveSharedDraft,
+  seedPlayersForScoring,
   type SharedDraft,
 } from "@/persistence/league-draft";
+import {
+  parseChenScoring,
+  scoringFromSource,
+  type ChenScoring,
+} from "@/adapters/chen/boris-chen";
 import {
   claimHumanSlot,
   startMockClock,
   type MockDraftConfig,
   type MockPlayerSeed,
 } from "@/adapters/yahoo/mock-runner";
-import { loadMockConfig, saveMockConfig } from "@/adapters/yahoo/mock-store";
+import {
+  loadMockConfig,
+  loadMockSnapshot,
+  saveMockConfig,
+} from "@/adapters/yahoo/mock-store";
 
 export const DEMO_ROOM_PREFIX = "demo:";
-const MAX_OPEN_ROOMS = 8;
 const COMPLETE_TTL_MS = 45 * 60 * 1000;
 // A room with no mock config is a half-created/orphaned shell (e.g. recreated
 // from a stale cookie). Give creation a grace window, then recycle it.
@@ -191,7 +200,6 @@ export async function findOrCreateOpenDemoRoom(): Promise<{
     where: { id: { startsWith: DEMO_ROOM_PREFIX } },
     orderBy: { createdAt: "desc" },
   });
-  const healthy: Array<{ shared: SharedDraft; config: MockDraftConfig }> = [];
   for (const row of rooms) {
     const shared = await getOrCreateLeagueDraft(row.id);
     const config = shared.leagueKey ? await loadMockConfig(shared.leagueKey) : null;
@@ -200,14 +208,13 @@ export async function findOrCreateOpenDemoRoom(): Promise<{
       : new Set<number>();
     const seats = openSeats(config, shared, active);
     if (seats.broken || !config) continue; // skip orphaned shells entirely
-    if (!seats.complete && seats.openCount > 0) {
+    const snapshot = await loadMockSnapshot(config.leagueKey);
+    const complete =
+      seats.complete ||
+      (snapshot?.draftResults.length ?? 0) >= config.teamCount * config.rounds;
+    if (!complete && seats.openCount > 0) {
       return { shared, config };
     }
-    healthy.push({ shared, config });
-  }
-  // Too many live rooms already: reuse the newest healthy one instead of sprawling.
-  if (healthy.length >= MAX_OPEN_ROOMS && healthy[0]) {
-    return { shared: healthy[0].shared, config: healthy[0].config };
   }
   const created = await createPausedRoom();
   const config = await loadMockConfig(created.leagueKey);
@@ -219,6 +226,9 @@ export interface DemoRoomSummary {
   readonly totalSeats: number;
   readonly activeSeats: number;
   readonly openSeats: number;
+  readonly openSeatList: readonly number[];
+  readonly scoring: ChenScoring;
+  readonly rounds: number;
   readonly picks: number;
   readonly totalPicks: number;
   readonly started: boolean;
@@ -238,15 +248,24 @@ export async function listDemoRooms(): Promise<DemoRoomSummary[]> {
     if (!shared.leagueKey) continue; // orphaned shell
     const config = await loadMockConfig(shared.leagueKey);
     if (!config) continue;
+    const snapshot = await loadMockSnapshot(shared.leagueKey);
     const active = activeSeatSet(config.humanSlots, await loadSeatSeen(row.id));
-    const totalPicks = shared.teamCount * shared.rounds;
-    const complete = shared.picks.length >= totalPicks;
+    const totalPicks = config.teamCount * config.rounds;
+    const picks = Math.max(shared.picks.length, snapshot?.draftResults.length ?? 0);
+    const complete = picks >= totalPicks;
+    const openSeatList = Array.from(
+      { length: shared.teamCount },
+      (_, index) => index + 1,
+    ).filter((slot) => !active.has(slot));
     summaries.push({
       id: row.id,
       totalSeats: shared.teamCount,
       activeSeats: active.size,
       openSeats: complete ? 0 : Math.max(0, shared.teamCount - active.size),
-      picks: shared.picks.length,
+      openSeatList: complete ? [] : openSeatList,
+      scoring: scoringFromSource(shared.source),
+      rounds: shared.rounds,
+      picks,
       totalPicks,
       started: Boolean(config.startedAtIso) && Number.isFinite(Date.parse(config.startedAtIso)),
       complete,
@@ -277,6 +296,13 @@ export async function claimDemoSeat(
   if (!shared.leagueKey) throw new Error("Demo room is missing a mock key");
   const loaded = await loadMockConfig(shared.leagueKey);
   if (!loaded) throw new Error("Demo room is not ready");
+  const snapshot = await loadMockSnapshot(shared.leagueKey);
+  if (
+    snapshot &&
+    snapshot.draftResults.length >= loaded.teamCount * loaded.rounds
+  ) {
+    throw new Error("This demo draft is complete");
+  }
   const seen = await loadSeatSeen(roomId);
   const active = activeSeatSet(loaded.humanSlots, seen);
 
@@ -312,27 +338,59 @@ export async function claimDemoSeat(
   return { shared, slot, config: started };
 }
 
-/**
- * Wipe a demo room back to a fresh mock and re-arm the clock. The shared board
- * (this is the "anyone can restart a mock" affordance) so every currently-active
- * seat is preserved as a human slot; robots refill the rest. Picks are cleared
- * and a new variety seed is rolled so the board doesn't replay identically.
- */
-export async function restartDemoRoom(
-  roomId: string,
-  callerSlot: number | null,
-): Promise<{ shared: SharedDraft; slot: number | null; config: MockDraftConfig }> {
-  const shared = await getOrCreateLeagueDraft(roomId);
-  if (!shared.leagueKey) throw new Error("Demo room is missing a mock key");
-  const leagueKey = shared.leagueKey;
-  const existing = await loadMockConfig(leagueKey);
-  const seen = await loadSeatSeen(roomId);
-  const active = existing
-    ? activeSeatSet(existing.humanSlots, seen)
-    : new Set<number>();
-  if (callerSlot) active.add(callerSlot);
-  const humanSlots = [...active].sort((a, b) => a - b);
-  const players: MockPlayerSeed[] = shared.players.map((player) => ({
+export interface CreateDemoRoomInput {
+  readonly scoring: ChenScoring;
+  readonly teamCount: number;
+  readonly rounds: number;
+  readonly slot: number;
+}
+
+export function validateDemoRoomInput(input: {
+  scoring?: unknown;
+  teamCount?: unknown;
+  rounds?: unknown;
+  slot?: unknown;
+}): CreateDemoRoomInput {
+  const scoringRaw = typeof input.scoring === "string" ? input.scoring : "";
+  if (!["standard", "half-ppr", "ppr"].includes(scoringRaw)) {
+    throw new Error("Scoring must be Standard, Half PPR, or PPR");
+  }
+  const scoring = parseChenScoring(scoringRaw);
+  const teamCount = Number(input.teamCount);
+  const rounds = Number(input.rounds);
+  const slot = Number(input.slot);
+  if (!Number.isInteger(teamCount) || teamCount < 8 || teamCount > 14) {
+    throw new Error("Roster count must be between 8 and 14");
+  }
+  if (!Number.isInteger(rounds) || rounds < 10 || rounds > 16) {
+    throw new Error("Rounds must be between 10 and 16");
+  }
+  if (!Number.isInteger(slot) || slot < 1 || slot > teamCount) {
+    throw new Error(`Draft slot must be between 1 and ${teamCount}`);
+  }
+  return { scoring, teamCount, rounds, slot };
+}
+
+export async function createDemoRoom(
+  input: CreateDemoRoomInput,
+): Promise<{ shared: SharedDraft; slot: number; config: MockDraftConfig }> {
+  const settings = validateDemoRoomInput(input);
+  const roomId = `${DEMO_ROOM_PREFIX}${randomUUID()}`;
+  const leagueKey = leagueKeyFor(roomId);
+  const seeded = await seedPlayersForScoring(settings.scoring);
+  await prisma.leagueDraft.create({
+    data: {
+      id: roomId,
+      leagueKey,
+      mode: "live",
+      teamCount: settings.teamCount,
+      rounds: settings.rounds,
+      playersJson: JSON.stringify(seeded.players),
+      importedAt: seeded.importedAt,
+      source: seeded.source,
+    },
+  });
+  const players: MockPlayerSeed[] = seeded.players.map((player) => ({
     id: player.id,
     name: player.name,
     position: player.position,
@@ -340,29 +398,25 @@ export async function restartDemoRoom(
     chenRank: player.chenRank,
     adp: player.adp,
   }));
-  let config: MockDraftConfig = {
+  const config = startMockClock({
     leagueKey,
-    teamCount: shared.teamCount,
-    rounds: shared.rounds,
-    intervalMs: existing?.intervalMs ?? 3000,
+    teamCount: settings.teamCount,
+    rounds: settings.rounds,
+    intervalMs: 3000,
     startedAtIso: "",
-    humanSlots,
+    humanSlots: [settings.slot],
     picksBySlot: {},
-    autoPickMs: existing?.autoPickMs ?? 20000,
+    autoPickMs: 20000,
     varietySeed: randomUUID(),
     players,
-  };
-  if (humanSlots.length) config = startMockClock(config);
-  await saveMockConfig(config);
-  const next = await saveSharedDraft({
-    draftId: roomId,
-    mode: "live",
-    leagueKey,
-    picks: [],
   });
-  const now = new Date().toISOString();
-  const freshSeen: Record<number, string> = {};
-  for (const slot of humanSlots) freshSeen[slot] = now;
-  await saveSeatSeen(roomId, freshSeen);
-  return { shared: next, slot: callerSlot, config };
+  await saveMockConfig(config);
+  await saveSeatSeen(roomId, {
+    [settings.slot]: new Date().toISOString(),
+  });
+  return {
+    shared: await getOrCreateLeagueDraft(roomId),
+    slot: settings.slot,
+    config,
+  };
 }

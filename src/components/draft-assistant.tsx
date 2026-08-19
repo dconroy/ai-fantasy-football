@@ -1015,27 +1015,6 @@ export function DraftAssistant({
     }
   }
 
-  async function restartDemo() {
-    if (!confirmClearBoard()) return;
-    setNotice("Restarting the mock…");
-    try {
-      const response = await fetch("/api/demo/restart", { method: "POST" });
-      const payload = (await response.json()) as DraftPayload & {
-        error?: string;
-        demo?: { role: "watch" | "play"; slot: number | null; roomId: string; takenSlots?: number[] };
-      };
-      if (!response.ok || !payload.draft) {
-        setNotice(payload.error ?? "Couldn't restart the mock.");
-        return;
-      }
-      setDemoIdle(false);
-      setSelected(null);
-      applyPayload(payload, "Mock restarted — fresh board, same seat.");
-    } catch {
-      setNotice("Couldn't restart the mock.");
-    }
-  }
-
   async function joinDemo(seat?: number | null) {
     const requested = seat ?? chosenSeat ?? null;
     const response = await fetch("/api/demo/join", {
@@ -1128,22 +1107,29 @@ export function DraftAssistant({
   // Any active member may restart a mock (the board is shared and the server
   // only requires an active session). It stays hidden on the live board via
   // `mockActive`, so nobody can wipe a real draft night mid-pick.
-  const canRestartMock = mockActive && (!isDemo || demoRole === "play");
+  const canRestartMock = mockActive && !isDemo;
   const restartMockButton = canRestartMock ? (
     <button
       className="secondary"
       onClick={() =>
-        void (isDemo
-          ? restartDemo()
-          : practiceMockActive
-            ? startMockHarness()
-            : startSession("mock"))
+        void (practiceMockActive ? startMockHarness() : startSession("mock"))
       }
       title="Clear the shared board and run this mock again from scratch"
     >
       Restart mock
     </button>
   ) : null;
+
+  async function copyDemoInvite() {
+    if (!draftId) return;
+    const invite = `${window.location.origin}/demo?room=${encodeURIComponent(draftId)}`;
+    try {
+      await navigator.clipboard.writeText(invite);
+      setNotice("Invite link copied.");
+    } catch {
+      window.prompt("Copy this invite link:", invite);
+    }
+  }
 
   async function patchUser(id: string, data: Record<string, unknown>) {
     const response = await fetch("/api/admin/users", {
@@ -1316,7 +1302,7 @@ export function DraftAssistant({
               }))
             }
           >
-            {Array.from({ length: 12 }, (_, index) => (
+            {Array.from({ length: state.draft.teamCount }, (_, index) => (
               <option key={index + 1}>{index + 1}</option>
             ))}
           </select>
@@ -1378,10 +1364,26 @@ export function DraftAssistant({
           </>
         ) : (
           <>
-            {restartMockButton}
+            {isDemo ? (
+              <>
+                <Link className="button-link secondary" href="/demo">
+                  Back to lobby
+                </Link>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => void copyDemoInvite()}
+                >
+                  Copy invite link
+                </button>
+              </>
+            ) : (
+              restartMockButton
+            )}
             <span className="strip-hint">
-              The board is shared — anyone can restart a mock, but only the admin
-              runs live sync and resets. You pick players, pins, and avoids.
+              {isDemo
+                ? "This room is public — invite others to choose an open seat, or return to the lobby for another draft."
+                : "The board is shared. Only the admin runs live sync and resets; you pick players, pins, and avoids."}
             </span>
           </>
         )}
@@ -1815,7 +1817,7 @@ export function DraftAssistant({
         <aside className="panel recommendations">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Calculated after every pick</p>
+              <p className="eyebrow">Live recommendations</p>
               <h2>{recoTab === "insights" ? "Insights" : "Top five"}</h2>
             </div>
             <span>
@@ -1827,7 +1829,7 @@ export function DraftAssistant({
                   ? "draft complete"
                   : recommendation.picksUntilFollowingSelection === null
                     ? "last pick"
-                    : `${recommendation.picksUntilFollowingSelection} until following turn`}
+                    : `${recommendation.picksUntilFollowingSelection} picks until your next turn`}
             </span>
           </div>
           <div className="reco-tabs" role="tablist">
@@ -1944,7 +1946,7 @@ export function DraftAssistant({
         <section className="panel available-panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Chen-first rankings</p>
+              <p className="eyebrow">Available players</p>
               <h2>Best available <span>{available.length}</span></h2>
             </div>
           </div>

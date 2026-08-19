@@ -23,13 +23,15 @@ There is no password gate and nobody has to approve you.
 ## Try the demo
 
 1. Open [dojo.football/demo](https://dojo.football/demo).
-2. You start as a **spectator**. The room stays paused until someone joins.
-3. **Pick a seat** from the dropdown (only open seats are listed) and click **Join** — or just click **Join next open seat** to grab the first free one. That starts the clock. If someone grabs your seat first, you’ll be asked to pick another.
-4. Robots fill empty seats. The room **pauses on your turn** until you confirm.
-5. If you sit on the clock for about 20 seconds, the room auto-drafts best-available so it doesn’t stall.
-6. If all 12 seats are taken, the next person gets a **new room**. Several demos can run at once.
+2. Choose a listed public draft, select one of its open seats, and click **Join**.
+3. Or create a room: choose Standard/Half PPR/Full PPR, 8–14 rosters, 10–16 rounds, and your draft slot.
+4. Copy the unique invite link and send it to friends. They open the link and choose any remaining seat.
+5. Robots fill empty seats. The room **pauses on your turn** until you confirm.
+6. If you sit on the clock for about 20 seconds, the room auto-drafts best-available so it doesn’t stall.
 
-You can leave and come back — your browser remembers the room for a few hours.
+You can leave and come back — your browser remembers the room for a few hours. Use
+**Copy invite link** on the board at any time, or **Back to lobby** to find another draft
+without resetting the shared room.
 
 ---
 
@@ -150,6 +152,6 @@ Same rule: it advises, you click in Yahoo.
 
 **The live board isn’t seeing picks.** Yahoo may not have approved Fantasy Sports API access yet, or the league key is a mock/test league that isn’t moving. You can still confirm picks on this board by hand.
 
-**Can someone else wreck my board?** Demo rooms are shared with whoever joined that room. Your Yahoo or Sleeper board is yours.
+**Can someone else reset my demo?** No. Demo users return to the lobby instead of wiping a shared room. Everyone in the room can still make picks for their own seat. Your Yahoo or Sleeper board is yours.
 
 **Where do I go?** [dojo.football](https://dojo.football)

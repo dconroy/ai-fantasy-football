@@ -10,7 +10,10 @@ import {
 } from "@/domain";
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
 import type { ChenImport } from "@/adapters/chen/boris-chen";
-import { scoringFromSource } from "@/adapters/chen/boris-chen";
+import {
+  scoringFromSource,
+  type ChenScoring,
+} from "@/adapters/chen/boris-chen";
 import { getFreshChenImport } from "@/adapters/chen/server-cache";
 import {
   getPlayerMetaIndex,
@@ -75,6 +78,14 @@ function shapeChenImport(cached: ChenImport | null) {
 
 async function freshPlayersFromChen() {
   return shapeChenImport(await getFreshChenImport());
+}
+
+export async function seedPlayersForScoring(scoring: ChenScoring) {
+  const seeded = shapeChenImport(await getFreshChenImport(undefined, scoring));
+  if (!seeded) {
+    throw new Error(`Player rankings are unavailable for ${scoring}`);
+  }
+  return seeded;
 }
 
 export async function getOrCreateLeagueDraft(
@@ -200,13 +211,14 @@ export async function ensureBoardByes(draftId = LEAGUE_DRAFT_ID): Promise<void> 
     const current = await getOrCreateLeagueDraft(draftId);
     // Built-in fixtures already carry byes; nothing to enrich.
     if (current.source === "Built-in mock data") return;
-    const needsEnrichment = current.players.some(
-      (player) =>
-        player.byeWeek === undefined ||
-        player.imageUrl === undefined ||
-        !player.team ||
-        player.team === "FA",
-    );
+    const needsPlayerEnrichment = (player: Player) =>
+      player.byeWeek === undefined ||
+      player.imageUrl === undefined ||
+      !player.team ||
+      player.team === "FA";
+    const needsEnrichment =
+      current.players.some(needsPlayerEnrichment) ||
+      current.picks.some((pick) => needsPlayerEnrichment(pick.player));
     if (!needsEnrichment) return;
 
     const sleeper = await getSleeperIndex();
@@ -257,8 +269,37 @@ export async function ensureBoardByes(draftId = LEAGUE_DRAFT_ID): Promise<void> 
       changed = true;
       return next;
     });
-    if (!changed) return;
-    await saveSharedDraft({ draftId, players });
+    const enrichedById = new Map(players.map((player) => [player.id, player]));
+    let picksChanged = false;
+    const picks = current.picks.map((pick) => {
+      const enriched = enrichedById.get(pick.player.id);
+      if (!enriched) return pick;
+      const nextPlayer: Player = {
+        ...pick.player,
+        team: enriched.team,
+        teamName: enriched.teamName,
+        byeWeek: enriched.byeWeek,
+        imageUrl: enriched.imageUrl,
+        percentOwned: enriched.percentOwned,
+        playerKey: enriched.playerKey,
+        injuryStatus: enriched.injuryStatus,
+      };
+      if (
+        nextPlayer.team === pick.player.team &&
+        nextPlayer.teamName === pick.player.teamName &&
+        nextPlayer.byeWeek === pick.player.byeWeek &&
+        nextPlayer.imageUrl === pick.player.imageUrl &&
+        nextPlayer.percentOwned === pick.player.percentOwned &&
+        nextPlayer.playerKey === pick.player.playerKey &&
+        nextPlayer.injuryStatus === pick.player.injuryStatus
+      ) {
+        return pick;
+      }
+      picksChanged = true;
+      return { ...pick, player: nextPlayer };
+    });
+    if (!changed && !picksChanged) return;
+    await saveSharedDraft({ draftId, players, picks });
   } catch {
     // Enrichment is a nicety; never let it break loading the board.
   }

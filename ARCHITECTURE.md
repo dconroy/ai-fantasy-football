@@ -28,7 +28,8 @@ src/
     login/             # Yahoo + Sleeper connect
     page.tsx           # landing page (dojo.football)
     app/page.tsx       # signed-in board host -> <DraftAssistant/>
-    demo/page.tsx      # anonymous demo -> <DraftAssistant variant="demo"/>
+    demo/page.tsx      # anonymous lobby; ?room=<id> -> DraftAssistant demo
+    demo/lobby.tsx     # list/join rooms, custom room form, invite-link step
     weekly/page.tsx    # in-season host -> <WeeklyHq/>
     media/             # streams the login GIF + MP3
   adapters/            # I/O at the edges (impure)
@@ -63,7 +64,9 @@ redirects to `/app`).
 Three entry points:
 
 - **`/demo`** — anonymous. A `dojo_demo` cookie (`auth/demo-session.ts`) carries
-  `{ roomId, slot, role }`; no `User` row.
+  `{ roomId, slot, role }`; no `User` row. The lobby lists public rooms or creates
+  a custom scoring/team-count/round-count setup. `/demo?room=<id>` is its stable
+  invite URL; recipients begin as spectators and claim an open seat.
 - **Sleeper** — `POST /api/sleeper/connect` looks up the username, upserts a `User`
   with `yahooGuid = sleeper:{userId}` and dummy tokens, and attaches the draft.
 - **Yahoo** — OAuth below.
@@ -107,7 +110,9 @@ onto the resolved board at read time.
 | `/api/auth/logout` `/dev-login` | — | sign out + E2E login |
 | `/api/yahoo/auth` `/callback` `/status` `/leagues` | — | OAuth start/return, connection status, league list |
 | `/api/sleeper/connect` | POST | username lookup, then attach a Sleeper draft to a board |
-| `/api/demo` `/api/demo/join` | GET/POST | open/resume a demo room; claim a chosen seat |
+| `/api/demo` `/api/demo/join` | GET/POST | open/resume a specific demo room; claim a chosen seat |
+| `/api/demo/create` | POST | create a public room with scoring, teams, rounds, and creator slot |
+| `/api/demo/rooms` | GET | list active rooms with completion status, settings, activity, and exact open seats |
 | `/api/draft` | GET/PUT | read board for `?draftId` (+ my prefs); reset/replace players/set league/apply picks |
 | `/api/draft/pick` | POST | append pick / undo / advance one / simulate to my turn |
 | `/api/me` | GET/PUT | current user's prefs |

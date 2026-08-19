@@ -58,7 +58,7 @@ export async function readDemoToken(token?: string): Promise<DemoClaims | null> 
   const slot = Number(slotRaw);
   return {
     roomId,
-    slot: slot >= 1 && slot <= 12 ? slot : null,
+    slot: slot >= 1 && slot <= 14 ? slot : null,
     role,
     exp,
   };
