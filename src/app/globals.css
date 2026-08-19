@@ -1194,15 +1194,17 @@ h2 {
   font-size: 10px;
 }
 
-.board {
+.panel.board {
   max-width: 100%;
   margin: 12px auto 0;
+  overflow: visible;
 }
 
 .board-grid {
   display: grid;
   grid-template-columns: repeat(var(--board-teams, 12), minmax(0, 1fr));
-  overflow: hidden;
+  overflow: visible;
+  padding: 6px 4px 10px;
 }
 
 .board-head,
@@ -1232,8 +1234,15 @@ h2 {
 }
 
 .board-cell {
+  position: relative;
+  z-index: 1;
   padding: 4px 3px;
   min-height: 62px;
+  overflow: visible;
+}
+
+.board-cell.dock-hot {
+  z-index: 4;
 }
 
 .board-cell.mine {
@@ -1257,10 +1266,21 @@ h2 {
   line-height: 1.15;
   text-align: left;
   cursor: pointer;
+  transform-origin: center center;
+  transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
 }
 
-button.board-pick:hover {
-  filter: brightness(1.08);
+button.board-pick:hover,
+.board-cell.dock-hot button.board-pick {
+  filter: brightness(1.06);
+  box-shadow: 0 10px 22px rgb(0 0 0 / 22%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.board-pick {
+    transition: none;
+    transform: none !important;
+  }
 }
 
 .board-pick.empty {

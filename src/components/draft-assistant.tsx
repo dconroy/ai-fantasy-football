@@ -238,6 +238,9 @@ export function DraftAssistant() {
   const [syncPaused, setSyncPaused] = useState(false);
   const [previewMember, setPreviewMember] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [dockHover, setDockHover] = useState<{ round: number; slot: number } | null>(
+    null,
+  );
   const [dark, setDark] = useState(false);
   const [yahooConnected, setYahooConnected] = useState(false);
   const [notice, setNotice] = useState("Simulation ready");
@@ -864,6 +867,16 @@ export function DraftAssistant() {
   function openDetail(id: string) {
     setSelected(id);
     setDetailId(id);
+  }
+
+  function dockScale(round: number, slot: number): number {
+    if (!dockHover) return 1;
+    const dist = Math.hypot(
+      slot - dockHover.slot,
+      (round - dockHover.round) * 0.85,
+    );
+    if (dist > 1.75) return 1;
+    return 1 + 0.2 * Math.exp(-(dist * dist) / 0.85);
   }
 
   const isAdmin = me?.role === "admin";
@@ -1731,6 +1744,7 @@ export function DraftAssistant() {
         <div
           className="board-grid"
           style={{ gridTemplateColumns: `repeat(${state.draft.teamCount}, minmax(0, 1fr))` }}
+          onMouseLeave={() => setDockHover(null)}
         >
           {Array.from({ length: state.draft.teamCount }, (_, index) => (
             <div
@@ -1749,16 +1763,20 @@ export function DraftAssistant() {
                 const pick = state.draft.picks.find(
                   (entry) => entry.round === round && entry.slot === slot,
                 );
+                const scale = dockScale(round, slot);
                 return (
                   <div
-                    className={`board-cell ${slot === state.draft.userSlot ? "mine" : ""}`}
+                    className={`board-cell ${slot === state.draft.userSlot ? "mine" : ""} ${scale > 1 ? "dock-hot" : ""}`}
                     key={`${round}-${slot}`}
+                    style={{ zIndex: scale > 1 ? Math.round(scale * 24) : undefined }}
+                    onMouseEnter={() => setDockHover({ round, slot })}
                   >
                     {pick ? (
                       <button
                         type="button"
                         className={`board-pick pos-${pick.player.position.toLowerCase()}`}
                         onClick={() => openDetail(pick.player.id)}
+                        style={{ transform: `scale(${scale})` }}
                       >
                         <span>
                           {pick.round}.{pick.slot}
