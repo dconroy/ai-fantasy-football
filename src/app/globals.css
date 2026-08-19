@@ -55,6 +55,41 @@ button:disabled {
   opacity: .45;
 }
 
+.build-footer {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 5px 14px;
+  border-top: 1px solid rgb(13 35 22 / 6%);
+  background: rgb(236 239 242 / 78%);
+  color: #8b938c;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.build-footer code {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: #6f7872;
+}
+
+html:has(.app.dark) .build-footer {
+  border-top-color: rgb(255 255 255 / 6%);
+  background: rgb(16 23 19 / 72%);
+  color: #7d8a80;
+}
+
+html:has(.app.dark) .build-footer code {
+  color: #9aa69e;
+}
+
 .app {
   min-height: 100vh;
   padding: 20px 24px 48px;
