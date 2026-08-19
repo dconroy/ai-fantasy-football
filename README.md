@@ -1,39 +1,101 @@
-# 2026 Fantasy Football Draft Room
+<div align="center">
 
-Not a developer? Read [HOW-IT-WORKS.md](HOW-IT-WORKS.md) instead — it explains
-the whole app in plain English. Building on it? See
-[ARCHITECTURE.md](ARCHITECTURE.md) for the technical design.
+# Full Contact · AI Fantasy Draft Room
 
-A local, desktop-first 12-team 0.5-PPR snake draft assistant. The first version
-focuses on a reliable simulation and a transparent, framework-independent
-recommendation engine. It never submits a draft pick to Yahoo.
+**Strike first. Draft smart. Show no mercy.**
 
-The built-in rankings are synthetic demonstration data, not 2026 advice. The
-board loads Boris Chen's 0.5 PPR list by default and can switch to PPR or
-standard.
+A local, desktop-first **12-team 0.5-PPR snake draft** command center. It watches the
+draft, does the math after every pick, and tells your league who to take — you still
+make the real selection in Yahoo. It never submits a pick on your behalf.
+
+<img src="docs/screenshots/draft-board.png" alt="The shared AI draft board: on-the-clock banner, live Top-five recommendations, Chen-first rankings, and the team-by-team board" width="900" />
+
+</div>
+
+> Not a developer? Read **[HOW-IT-WORKS.md](HOW-IT-WORKS.md)** for the whole app in plain
+> English. Building on it? See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the technical design.
+
+The rankings shown throughout this README are Boris Chen's public tiers loaded live and
+cached; player names/headshots are real, but treat any specific board as a **demonstration**
+rather than 2026 advice. The board defaults to Chen's **0.5 PPR** list and can switch to full
+PPR or standard on the fly.
+
+---
+
+## Feature tour
+
+### Recommendations after every pick
+
+The left rail is the whole point. After **every** selection it recalculates the five best
+players for *your* roster from Chen rank/tier, tier cliffs, position need & scarcity, roster
+balance, turn distance, optional ADP, an estimated return-probability, and minor team/bye
+concentration — each with a plain-English reason and a transparent score. "Why #1?" compares
+the top pick against the next two.
+
+<div align="center">
+<img src="docs/screenshots/recommendations.png" alt="Top-five recommendation panel with headshots, tiers, reasons, and scores" width="520" />
+</div>
+
+### Draft insights
+
+Flip to the **Insights** tab for a roster read: red-flag checks, the model's lean, and your
+bye-week concentration so you never stack four starters on the same week.
+
+<div align="center">
+<img src="docs/screenshots/ai-insights.png" alt="Insights tab showing red-flag checks, model lean, and bye-week concentration" width="820" />
+</div>
+
+### Draft report card
+
+When the board fills up, every team gets **graded on a curve**. Your team is the hero panel —
+letter grade, overall rank, and concrete good/bad reasons (elite anchors, positional depth,
+lineup holes, bye logjams). The leaderboard ranks all twelve and expands to show each roster.
+
+<div align="center">
+<img src="docs/screenshots/report-card.png" alt="Draft report card: your team's graded hero panel plus a ranked A-to-C leaderboard" width="640" />
+</div>
+
+### Three ways to run a draft
+
+The admin starts a draft in one click. Practice mocks run the whole room on a timer;
+manual mocks are fully hand-driven; draft night follows your real Yahoo draft.
+
+<div align="center">
+<img src="docs/screenshots/start-a-draft.png" alt="Start-a-draft launcher with Practice mock, Manual mock, and Draft-night live modes" width="820" />
+</div>
+
+| Mode | What happens | When to use it |
+|---|---|---|
+| **Practice mock** | Robots draft the open seats on a timer and **pause at every real manager's slot** until they confirm. Absent managers are auto-drafted a **complete** starting lineup after their clock expires. | A full group dress rehearsal |
+| **Manual mock** | Nothing moves until you press *Simulate to my pick* / *Advance one*. | Exploring strategy solo |
+| **Draft night — live** | The board follows your **real Yahoo draft** automatically and keeps recommendations fresh. | The actual draft |
+
+Robots draft with **slight, seeded preferences** (a deterministic per-team nudge) so opponents
+feel like managers with biases instead of identical best-available bots — while staying
+reproducible so the shared board never reshuffles between syncs.
+
+---
 
 ## What works
 
-- Select any draft slot from 1–12 and simulate a 15-round snake draft.
-- Drafted players disappear; picks, roster slots, and the board update
-  immediately.
-- Five recommendations recalculate from Chen rank/tier, tier cliffs, position
-  need/scarcity, roster balance, turn distance, optional ADP, estimated return
-  probability, and minor team/bye concentration.
-- The UI shows factor-derived explanations and compares recommendation #1 with
-  the next two choices.
-- Confirm a recommendation locally, mark any player drafted, undo the latest
-  pick, pin targets, avoid players, search/filter, and change key weights.
-- Local storage preserves the active draft immediately. Prisma/Neon Postgres
-  synchronizes the active session across devices.
-- Import CSV manually or ask the server adapter to retrieve/cache the configured
-  public Chen list (0.5 PPR by default). Source and import timestamps are visible.
-- Export draft results as JSON or CSV. Light and dark themes are included.
-- Automatic selection is unavailable and disabled.
+- Pick any draft slot **1–12** and simulate a **15-round** snake draft; drafted players
+  disappear and picks, roster slots, and the board update immediately.
+- Five recommendations with factor-derived explanations, recalculated after every pick.
+- Confirm a recommendation locally, mark any player drafted, undo the latest pick, pin
+  targets, avoid players, search/filter by position & tier, and change key strategy weights.
+- **Chen list toggle** — default 0.5 PPR, switch to PPR or standard; each format is fetched
+  and cached independently and stays auto-updated.
+- **Shared board** — everyone sees the same picks. Local storage preserves the active draft
+  instantly; Prisma/Neon Postgres synchronizes the session across devices and managers.
+- **Report card** grading with curved letter grades and per-team reasons.
+- Export draft results as JSON or CSV. Light and dark themes. A light footer shows the
+  release git hash and build time. Automatic pick submission is unavailable and disabled.
+
+---
 
 ## Setup
 
-Requires Node.js 20.9 or newer (Node 22 LTS recommended).
+Requires **Node.js 20.9+** (Node 22 LTS recommended).
 
 ```bash
 npm install
@@ -49,73 +111,64 @@ Open <http://localhost:3000>. To use the included CSV fallback, import
 Tests and checks:
 
 ```bash
-npm test
-npm run lint
-npm run build
+npm test          # unit tests (vitest)
+npm run lint      # eslint
+npm run build     # production build
 npx playwright install chromium
-npm run test:e2e
+npm run test:e2e  # browser tests
 ```
+
+---
 
 ## Ranking data
 
-`src/adapters/chen/boris-chen.ts` is the replaceable source adapter. It
-preserves tier, position-specific rank, overall rank, team, bye, and optional
-ADP from supported CSV columns. The fetch route uses the public URLs configured
-by `CHEN_HALF_PPR_CSV_URL` (default), `CHEN_PPR_CSV_URL`, and
-`CHEN_STANDARD_CSV_URL`, stores only successful responses in Postgres, and
-falls back to the last successful cache. It does not scrape pages, bypass
-access controls, or work around source restrictions.
+`src/adapters/chen/boris-chen.ts` is the replaceable source adapter. It preserves tier,
+position-specific rank, overall rank, team, bye, and optional ADP from supported CSV columns.
+The fetch route uses the public URLs configured by `CHEN_HALF_PPR_CSV_URL` (default),
+`CHEN_PPR_CSV_URL`, and `CHEN_STANDARD_CSV_URL`, stores only successful responses in Postgres,
+and falls back to the last successful cache. It does not scrape pages, bypass access controls,
+or work around source restrictions.
 
-Because source availability and schema can change, manual CSV import remains the
-safe fallback. Confirm that your use of any third-party data complies with its
-terms.
+Because source availability and schema can change, manual CSV import remains the safe fallback.
+Confirm that your use of any third-party data complies with its terms.
+
+## Recommendation model
+
+Weights live in `src/config/strategy.ts`. Each signal is normalized, multiplied by its
+configured weight, and retained in the result as a factor breakdown. Early kicker/defense and
+unnecessary backup QB/TE penalties are explicit. **The model uses no LLM-generated ranking or
+explanation** — every number and reason is derived from the transparent factor engine. The UI
+exposes the most important live adjustments; edit the configuration file for all defaults.
 
 ## Yahoo developer app and OAuth
 
 1. Create an application at <https://developer.yahoo.com/apps/>.
 2. Request Fantasy Sports API access at <https://sports.yahoo.com/developer/access/>.
-3. Set the callback URL to
-   `https://draft.conroy.dev/api/yahoo/callback`.
-4. Copy only the client ID and secret into your uncommitted `.env`; never add
-   access or refresh tokens to Git.
-5. Set the full 2026 league key (Yahoo keys normally include the game key and
-   league ID) after the league exists.
+3. Set the callback URL to `https://draft.conroy.dev/api/yahoo/callback`.
+4. Copy only the client ID and secret into your uncommitted `.env`; never add access or
+   refresh tokens to Git.
+5. Set the full 2026 league key after the league exists.
 
-The adapter supports settings, teams, draft results, and available players.
-`/api/yahoo/auth` starts OAuth; access and refresh tokens are encrypted with
-AES-256-GCM before storage in Postgres. Yahoo may return `403` until the
-application is approved for Fantasy Sports. See `docs/YAHOO_LIMITATIONS.md`.
-
-## Recommendation model
-
-Weights live in `src/config/strategy.ts`. Each signal is normalized, multiplied
-by its configured weight, and retained in the result as a factor breakdown.
-Early kicker/defense and unnecessary backup QB/TE penalties are explicit. The
-model uses no LLM-generated ranking or explanation.
-
-The UI exposes the most important live adjustments. Edit the configuration file
-for all defaults. The future automatic-behavior configuration is off by default,
-and stale-sync guards are covered by unit tests.
+The adapter supports settings, teams, draft results, and available players. `/api/yahoo/auth`
+starts OAuth; access and refresh tokens are encrypted with AES-256-GCM before storage in
+Postgres. Yahoo may return `403` until the application is approved for Fantasy Sports. See
+`docs/YAHOO_LIMITATIONS.md`.
 
 ## Project layout
 
-See `docs/ARCHITECTURE.md`. Prisma stores shared sessions, encrypted OAuth
-credentials, sync checkpoints, and confirmed identity mappings in Postgres.
-Yahoo player IDs should become canonical only after
-the identity resolver returns an exact result or the user confirms an ambiguous
-mapping.
+See **[ARCHITECTURE.md](ARCHITECTURE.md)**. Prisma stores shared sessions, encrypted OAuth
+credentials, sync checkpoints, and confirmed identity mappings in Postgres. Yahoo player IDs
+become canonical only after the identity resolver returns an exact result or a user confirms
+an ambiguous mapping.
 
 ## Before trusting it in a live draft
 
-- Replace synthetic fixtures with validated 2026 Chen data and review unmatched
-  identities.
-- Complete player-response parsing and UI reconciliation using a real 2026 test
-  league after Yahoo approves API access.
-- Measure how quickly Yahoo publishes active draft results and tune conservative
-  polling/backoff behavior.
-- Run a full dress rehearsal, including stale sync, conflicts, undo, refresh,
-  and loss of network.
+- Replace synthetic fixtures with validated 2026 Chen data and review unmatched identities.
+- Complete player-response parsing and UI reconciliation using a real 2026 test league after
+  Yahoo approves API access.
+- Measure how quickly Yahoo publishes active draft results and tune conservative polling/backoff.
+- Run a full dress rehearsal, including stale sync, conflicts, undo, refresh, and loss of network.
 - Expand browser tests against production-sized rankings.
 
-Yahoo has no documented live-draft pick submission operation. Confirm Pick is
-local only. Do not reinterpret transaction or lineup endpoints as draft APIs.
+> Yahoo has no documented live-draft pick submission operation. **Confirm Pick is local only.**
+> Do not reinterpret transaction or lineup endpoints as draft APIs.
