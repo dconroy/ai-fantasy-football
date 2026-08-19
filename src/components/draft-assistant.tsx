@@ -1594,21 +1594,48 @@ export function DraftAssistant() {
           <div><p className="eyebrow">All selections</p><h2>Draft board</h2></div>
           <span>Last local update {state.draft.picks.at(-1)?.madeAt ? new Date(state.draft.picks.at(-1)!.madeAt!).toLocaleTimeString() : "—"}</span>
         </div>
-        <div className="board-grid">
-          {Array.from({ length: 12 }, (_, index) => (
-            <div className={`board-team ${index + 1 === state.draft.userSlot ? "mine" : ""}`} key={index}>
-              <strong>{teamLabel(index + 1)}</strong>
-              {state.draft.picks
-                .filter((pick) => pick.slot === index + 1)
-                .map((pick) => (
-                  <div className={`board-pick pos-${pick.player.position.toLowerCase()}`} key={pick.overall}>
-                    <span>{pick.round}.{pick.slot}</span>
-                    <b>{pick.player.name}</b>
-                    <small>{pick.player.position}</small>
-                  </div>
-                ))}
+        <div
+          className="board-grid"
+          style={{ gridTemplateColumns: `repeat(${state.draft.teamCount}, minmax(0, 1fr))` }}
+        >
+          {Array.from({ length: state.draft.teamCount }, (_, index) => (
+            <div
+              className={`board-head ${index + 1 === state.draft.userSlot ? "mine" : ""}`}
+              key={`head-${index + 1}`}
+            >
+              {teamLabel(index + 1)}
             </div>
           ))}
+          {Array.from(
+            { length: state.draft.picks.reduce((max, pick) => Math.max(max, pick.round), 0) },
+            (_, roundIndex) => {
+              const round = roundIndex + 1;
+              return Array.from({ length: state.draft.teamCount }, (_, index) => {
+                const slot = index + 1;
+                const pick = state.draft.picks.find(
+                  (entry) => entry.round === round && entry.slot === slot,
+                );
+                return (
+                  <div
+                    className={`board-cell ${slot === state.draft.userSlot ? "mine" : ""}`}
+                    key={`${round}-${slot}`}
+                  >
+                    {pick ? (
+                      <div className={`board-pick pos-${pick.player.position.toLowerCase()}`}>
+                        <span>{pick.round}.{pick.slot}</span>
+                        <b>{pick.player.name}</b>
+                        <small>{pick.player.position}</small>
+                      </div>
+                    ) : (
+                      <div className="board-pick empty">
+                        <span>{round}.{slot}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            },
+          )}
         </div>
       </section>
     </main>
