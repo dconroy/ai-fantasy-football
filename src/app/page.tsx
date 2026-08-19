@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { LiveRooms } from "./live-rooms";
 
 export const metadata: Metadata = {
   title: "Draft Dojo",
@@ -72,6 +73,7 @@ export default function LandingPage() {
           <p className="landing-trust">
             Sleeper &amp; Yahoo · No signup for the demo
           </p>
+          <LiveRooms />
         </div>
 
         <figure className="landing-shot">

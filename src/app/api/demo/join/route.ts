@@ -5,6 +5,7 @@ import {
   demoCookieOptions,
   getDemoClaims,
 } from "@/auth/demo-session";
+import { prisma } from "@/persistence/prisma";
 import { draftStateFor, getOrCreateLeagueDraft } from "@/persistence/league-draft";
 import {
   claimDemoSeat,
@@ -21,18 +22,35 @@ function parseSlot(value: unknown): number | null {
   return Number.isInteger(slot) && slot > 0 ? slot : null;
 }
 
+async function roomIsReal(roomId: string): Promise<boolean> {
+  const room = await prisma.leagueDraft.findUnique({
+    where: { id: roomId },
+    select: { leagueKey: true },
+  });
+  return Boolean(room?.leagueKey);
+}
+
 export async function POST(request: NextRequest) {
   let requestedSlot: number | null = null;
+  let requestedRoom: string | null = null;
   try {
-    const body = (await request.json().catch(() => null)) as { slot?: unknown } | null;
+    const body = (await request.json().catch(() => null)) as {
+      slot?: unknown;
+      roomId?: unknown;
+    } | null;
     requestedSlot = parseSlot(body?.slot);
+    requestedRoom =
+      typeof body?.roomId === "string" && body.roomId.trim() ? body.roomId.trim() : null;
   } catch {
     requestedSlot = null;
   }
 
   try {
     const existing = await getDemoClaims();
-    let roomId = existing?.roomId;
+    // Prefer an explicitly requested room, then the cookie's room. Either way,
+    // only reuse a room that still exists as a real (mock-config) room.
+    let roomId = requestedRoom ?? existing?.roomId;
+    if (roomId && !(await roomIsReal(roomId))) roomId = undefined;
     if (!roomId) {
       roomId = (await findOrCreateOpenDemoRoom()).shared.id;
     }

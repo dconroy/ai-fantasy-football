@@ -13,6 +13,7 @@ import {
   touchLastSeen,
 } from "@/persistence/league-draft";
 import { boardPayload } from "@/persistence/draft-payload";
+import { touchDemoSeat } from "@/persistence/demo-rooms";
 import type { ChenImport } from "@/adapters/chen/boris-chen";
 import type { DraftState, Player } from "@/domain";
 
@@ -22,6 +23,9 @@ export async function GET(request: Request) {
   try {
     const { draftId, user, demo } = await requireBoardAccess(request);
     if (user) await touchLastSeen(user);
+    if (demo?.role === "play" && demo.slot) {
+      await touchDemoSeat(draftId, demo.slot).catch(() => undefined);
+    }
     await ensureFreshBoardPlayers(draftId);
     await ensureBoardByes(draftId);
     return NextResponse.json(await boardPayload(draftId, user, demo));

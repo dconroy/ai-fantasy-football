@@ -5,6 +5,7 @@ import {
   demoCookieOptions,
   getDemoClaims,
 } from "@/auth/demo-session";
+import { prisma } from "@/persistence/prisma";
 import { draftStateFor, getOrCreateLeagueDraft } from "@/persistence/league-draft";
 import { findOrCreateOpenDemoRoom, takenSeatsFor } from "@/persistence/demo-rooms";
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
@@ -25,25 +26,42 @@ function demoMe(slot: number | null, role: "watch" | "play") {
   };
 }
 
-export async function GET() {
+async function roomIsReal(roomId: string): Promise<boolean> {
+  const row = await prisma.leagueDraft.findUnique({
+    where: { id: roomId },
+    select: { leagueKey: true },
+  });
+  return Boolean(row?.leagueKey);
+}
+
+export async function GET(request: Request) {
   try {
+    const requestedRoom = new URL(request.url).searchParams.get("room")?.trim() || null;
     const existing = await getDemoClaims();
-    if (existing) {
-      const shared = await getOrCreateLeagueDraft(existing.roomId);
-      return NextResponse.json({
-        ...shared,
-        draft: draftStateFor(shared, existing.slot ?? 1),
-        members: [],
-        me: demoMe(existing.slot, existing.role),
-        demo: {
-          role: existing.role,
-          slot: existing.slot,
-          roomId: existing.roomId,
-          takenSlots: await takenSeatsFor(existing.roomId),
-        },
-      });
+    // Resume an existing claim only when no other room was explicitly requested
+    // and the claimed room still exists as a real (mock-config) room.
+    if (existing && (!requestedRoom || requestedRoom === existing.roomId)) {
+      if (await roomIsReal(existing.roomId)) {
+        const shared = await getOrCreateLeagueDraft(existing.roomId);
+        return NextResponse.json({
+          ...shared,
+          draft: draftStateFor(shared, existing.slot ?? 1),
+          members: [],
+          me: demoMe(existing.slot, existing.role),
+          demo: {
+            role: existing.role,
+            slot: existing.slot,
+            roomId: existing.roomId,
+            takenSlots: await takenSeatsFor(existing.roomId),
+          },
+        });
+      }
     }
-    const { shared } = await findOrCreateOpenDemoRoom();
+    // Honor an explicit ?room= target when it's a real room; else matchmake.
+    const shared =
+      requestedRoom && (await roomIsReal(requestedRoom))
+        ? await getOrCreateLeagueDraft(requestedRoom)
+        : (await findOrCreateOpenDemoRoom()).shared;
     const token = await createDemoToken({
       roomId: shared.id,
       slot: null,
