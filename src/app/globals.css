@@ -523,8 +523,9 @@ h2 {
 .recommendation {
   position: relative;
   display: grid;
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: 27px 34px 1fr;
   gap: 9px;
+  align-items: center;
   border-bottom: 1px solid var(--line);
   padding: 12px 14px;
   cursor: pointer;
@@ -567,6 +568,50 @@ h2 {
 .player-line > span:not(.position) {
   color: var(--muted);
   font-size: 9px;
+}
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.avatar.placeholder {
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 850;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.team-logo {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  vertical-align: middle;
+  margin-right: 3px;
+  flex-shrink: 0;
+}
+
+.player-cell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.player-cell-copy {
+  min-width: 0;
+}
+
+.player-cell-copy small {
+  display: flex;
+  align-items: center;
 }
 
 .position {

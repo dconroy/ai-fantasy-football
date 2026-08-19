@@ -163,6 +163,69 @@ function scoreComparison(
     : `${first.player.name} wins the calculated tie-break on Chen rank.`;
 }
 
+/** Sleeper hosts free, no-auth team logos keyed by lowercase abbreviation. */
+function teamLogoUrl(team?: string): string | null {
+  if (!team || team === "FA") return null;
+  return `https://sleepercdn.com/images/team_logos/nfl/${team.toLowerCase()}.png`;
+}
+
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0] ?? "")
+    .join("");
+}
+
+/** Round headshot with an initials fallback when a player has no photo yet. */
+function PlayerAvatar({
+  name,
+  imageUrl,
+  size = 34,
+}: {
+  name: string;
+  imageUrl?: string;
+  size?: number;
+}) {
+  if (!imageUrl) {
+    return (
+      <span
+        className="avatar placeholder"
+        style={{ width: size, height: size }}
+        aria-hidden
+      >
+        {initials(name)}
+      </span>
+    );
+  }
+  return (
+    <Image
+      className="avatar"
+      src={imageUrl}
+      alt=""
+      width={size}
+      height={size}
+      unoptimized
+    />
+  );
+}
+
+/** Small team logo badge; renders nothing for free agents / unknown teams. */
+function TeamLogo({ team, size = 16 }: { team?: string; size?: number }) {
+  const url = teamLogoUrl(team);
+  if (!url) return null;
+  return (
+    <Image
+      className="team-logo"
+      src={url}
+      alt={team ?? ""}
+      width={size}
+      height={size}
+      unoptimized
+    />
+  );
+}
+
 export function DraftAssistant() {
   const [state, setState] = useState<PersistedUiState>(initialState);
   const [ready, setReady] = useState(false);
@@ -1222,9 +1285,11 @@ export function DraftAssistant() {
               onClick={() => openDetail(item.player.id)}
             >
               <div className="rank">{index + 1}</div>
+              <PlayerAvatar name={item.player.name} imageUrl={item.player.imageUrl} />
               <div className="recommendation-copy">
                 <div className="player-line">
                   <strong>{item.player.name}</strong>
+                  <TeamLogo team={item.player.team} />
                   <span className={`position ${item.player.position.toLowerCase()}`}>
                     {item.player.position}
                   </span>
@@ -1295,9 +1360,15 @@ export function DraftAssistant() {
                 role="row"
               >
                 <span>{player.chenRank ?? "—"}</span>
-                <span>
-                  <strong>{player.name}</strong>
-                  <small>{player.position} · {player.team} · Bye {player.byeWeek ?? "—"}</small>
+                <span className="player-cell">
+                  <PlayerAvatar name={player.name} imageUrl={player.imageUrl} size={30} />
+                  <span className="player-cell-copy">
+                    <strong>{player.name}</strong>
+                    <small>
+                      <TeamLogo team={player.team} size={14} />
+                      {player.position} · {player.team} · Bye {player.byeWeek ?? "—"}
+                    </small>
+                  </span>
                 </span>
                 <span><i className={`tier tier-${Math.min(player.chenTier ?? 8, 8)}`}>T{player.chenTier ?? "—"}</i></span>
                 <span>{player.adp ?? "—"}</span>
