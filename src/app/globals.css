@@ -1170,12 +1170,61 @@ h2 {
   color: #475569;
 }
 
-.app.dark .board-pick.pos-qb small { color: #93c5fd; }
-.app.dark .board-pick.pos-rb small { color: #86efac; }
-.app.dark .board-pick.pos-wr small { color: #fdba74; }
-.app.dark .board-pick.pos-te small { color: #d8b4fe; }
+.app.dark .board-pick {
+  border-color: #4d6fa3;
+  background: color-mix(in srgb, #4d6fa3 9%, var(--panel));
+}
+.app.dark .board-pick small {
+  background: color-mix(in srgb, #4d6fa3 14%, var(--panel));
+  color: #8ea4c4;
+}
+
+.app.dark .board-pick.pos-qb {
+  border-color: #4d6fa3;
+  background: color-mix(in srgb, #4d6fa3 9%, var(--panel));
+}
+.app.dark .board-pick.pos-qb small {
+  background: color-mix(in srgb, #4d6fa3 14%, var(--panel));
+  color: #8ea4c4;
+}
+
+.app.dark .board-pick.pos-rb {
+  border-color: #3d7a58;
+  background: color-mix(in srgb, #3d7a58 10%, var(--panel));
+}
+.app.dark .board-pick.pos-rb small {
+  background: color-mix(in srgb, #3d7a58 14%, var(--panel));
+  color: #7ea88a;
+}
+
+.app.dark .board-pick.pos-wr {
+  border-color: #b07848;
+  background: color-mix(in srgb, #b07848 11%, var(--panel));
+}
+.app.dark .board-pick.pos-wr small {
+  background: color-mix(in srgb, #b07848 16%, var(--panel));
+  color: #c49a72;
+}
+
+.app.dark .board-pick.pos-te {
+  border-color: #6e5b93;
+  background: color-mix(in srgb, #6e5b93 10%, var(--panel));
+}
+.app.dark .board-pick.pos-te small {
+  background: color-mix(in srgb, #6e5b93 14%, var(--panel));
+  color: #a594c4;
+}
+
+.app.dark .board-pick.pos-k,
+.app.dark .board-pick.pos-def {
+  border-color: #6b7580;
+  background: color-mix(in srgb, #6b7580 8%, var(--panel));
+}
 .app.dark .board-pick.pos-k small,
-.app.dark .board-pick.pos-def small { color: #cbd5e1; }
+.app.dark .board-pick.pos-def small {
+  background: color-mix(in srgb, #6b7580 14%, var(--panel));
+  color: #9aa3ad;
+}
 
 .loading {
   min-height: 100vh;
