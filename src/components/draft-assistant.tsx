@@ -29,6 +29,8 @@ import {
 import { MOCK_PLAYERS } from "@/fixtures/mock-players";
 import { resolvePlayerIdentity } from "@/domain/identity";
 import { formatStamp } from "@/lib/build-info";
+import { DraftReportCard } from "@/components/draft-report-card";
+import { buildDraftReport } from "@/domain/draft-report";
 
 interface RemoteDraftPick {
   pick: number;
@@ -260,6 +262,8 @@ export function DraftAssistant() {
   const [members, setMembers] = useState<MemberSeat[]>([]);
   const [adminUsers, setAdminUsers] = useState<MemberSeat[]>([]);
   const [launcherOpen, setLauncherOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const reportSeenKey = useRef<string | null>(null);
   const [liveKeyDraft, setLiveKeyDraft] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [playerBrief, setPlayerBrief] = useState<{
@@ -404,7 +408,21 @@ export function DraftAssistant() {
   const picksUntilMyTurn = nextMine
     ? Math.max(0, nextMine.overall - current.overall)
     : 0;
-  const isMyTurn = current.slot === state.draft.userSlot;
+  const draftComplete =
+    state.draft.picks.length >=
+    state.draft.teamCount * state.draft.rounds;
+  const isMyTurn = !draftComplete && current.slot === state.draft.userSlot;
+  const draftReport = useMemo(
+    () => (draftComplete ? buildDraftReport(state.draft) : null),
+    [draftComplete, state.draft],
+  );
+  useEffect(() => {
+    if (!draftComplete) return;
+    const key = `${state.leagueKey ?? "board"}:${state.draft.picks.length}`;
+    if (reportSeenKey.current === key) return;
+    reportSeenKey.current = key;
+    setReportOpen(true);
+  }, [draftComplete, state.leagueKey, state.draft.picks.length]);
   useEffect(() => {
     document.title = isMyTurn
       ? "🚨 YOUR PICK — Conroy's AI Draft Dojo"
@@ -1086,6 +1104,11 @@ export function DraftAssistant() {
           <button className="icon-button" onClick={() => setDark((value) => !value)}>
             {dark ? "Light" : "Dark"}
           </button>
+          {draftComplete && (
+            <button className="icon-button" onClick={() => setReportOpen(true)}>
+              Report card
+            </button>
+          )}
         </div>
       </header>
 
@@ -1118,11 +1141,13 @@ export function DraftAssistant() {
         </label>
         <div className="turn-indicator">
           <strong>
-            {isMyTurn
-              ? showAutoCountdown
-                ? `🚨 YOU'RE ON THE CLOCK — auto-draft in ${autoPickSeconds}s`
-                : "🚨 YOU'RE ON THE CLOCK"
-              : `${picksUntilMyTurn} picks until your turn`}
+            {draftComplete
+              ? "Draft complete"
+              : isMyTurn
+                ? showAutoCountdown
+                  ? `🚨 YOU'RE ON THE CLOCK — auto-draft in ${autoPickSeconds}s`
+                  : "🚨 YOU'RE ON THE CLOCK"
+                : `${picksUntilMyTurn} picks until your turn`}
           </strong>
           <span>
             Pick {current.overall} · Round {current.round} · Slot {current.slot}
@@ -1211,6 +1236,15 @@ export function DraftAssistant() {
       </section>
 
       <div className="notice" role="status">{notice}</div>
+
+      {reportOpen && draftReport && (
+        <DraftReportCard
+          report={draftReport}
+          userSlot={state.draft.userSlot}
+          teamLabel={teamLabel}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
 
       {launcherOpen && adminView && (
         <div className="launcher-overlay" onClick={() => setLauncherOpen(false)}>
