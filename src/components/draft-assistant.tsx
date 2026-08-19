@@ -253,6 +253,14 @@ export function DraftAssistant() {
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [liveKeyDraft, setLiveKeyDraft] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [playerBrief, setPlayerBrief] = useState<{
+    season: number;
+    stats: Array<{ label: string; value: string }>;
+    news: Array<{ title: string; url: string; published?: string }>;
+  } | null>(null);
+  const [briefStatus, setBriefStatus] = useState<"idle" | "loading" | "ready">(
+    "idle",
+  );
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
@@ -292,7 +300,6 @@ export function DraftAssistant() {
     setState(next);
     setMe(payload.me);
     setMembers(payload.members);
-    setDark(payload.me.darkMode);
     if (payload.leagueKey) setLeagueKey(payload.leagueKey);
     if (message) setNotice(message);
   }
@@ -886,6 +893,41 @@ export function DraftAssistant() {
     setDetailId(id);
   }
 
+  useEffect(() => {
+    if (!detailPlayer) {
+      setPlayerBrief(null);
+      setBriefStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setBriefStatus("loading");
+    const params = new URLSearchParams({
+      name: detailPlayer.name,
+      position: detailPlayer.position,
+    });
+    void fetch(`/api/players/brief?${params}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((body) => {
+        if (cancelled) return;
+        if (body?.stats || body?.news) {
+          setPlayerBrief(body);
+          setBriefStatus("ready");
+        } else {
+          setPlayerBrief(null);
+          setBriefStatus("idle");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPlayerBrief(null);
+          setBriefStatus("idle");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailPlayer?.id, detailPlayer?.name, detailPlayer?.position]);
+
   const isAdmin = me?.role === "admin";
   const adminView = isAdmin && !previewMember;
   const pendingCount = adminUsers.filter((user) => user.status === "pending").length;
@@ -1439,6 +1481,54 @@ export function DraftAssistant() {
               ) : null}
             </div>
 
+            {briefStatus === "loading" ? (
+              <p className="detail-note">Loading 2025 stats and news…</p>
+            ) : null}
+
+            {playerBrief && playerBrief.stats.length > 0 ? (
+              <div className="detail-section">
+                <div className="detail-why-head">
+                  <strong>{playerBrief.season} season</strong>
+                  <span>Sleeper PPR</span>
+                </div>
+                <div className="detail-season">
+                  {playerBrief.stats.map((chip) => (
+                    <div key={chip.label}>
+                      <span>{chip.label}</span>
+                      <strong>{chip.value}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {playerBrief && playerBrief.news.length > 0 ? (
+              <div className="detail-section">
+                <div className="detail-why-head">
+                  <strong>Recent news</strong>
+                  <span>ESPN</span>
+                </div>
+                <ul className="detail-news">
+                  {playerBrief.news.map((item) => (
+                    <li key={item.url}>
+                      <a href={item.url} target="_blank" rel="noreferrer">
+                        {item.title}
+                      </a>
+                      {item.published ? (
+                        <small>
+                          {new Date(item.published).toLocaleDateString()}
+                        </small>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : briefStatus === "ready" &&
+              (!playerBrief || playerBrief.news.length === 0) &&
+              (!playerBrief || playerBrief.stats.length === 0) ? (
+              <p className="detail-note">No 2025 stats or news found for this player.</p>
+            ) : null}
+
             {detailRec ? (
               <div className="detail-why">
                 <div className="detail-why-head">
@@ -1680,7 +1770,7 @@ export function DraftAssistant() {
               <div className="roster-byes">
                 {insights.byes.map((group) => (
                   <span className={group.count >= 3 ? "hot" : ""} key={group.week}>
-                    W{group.week} · {group.count}
+                    Bye {group.week} · {group.count}
                   </span>
                 ))}
               </div>
@@ -1693,10 +1783,15 @@ export function DraftAssistant() {
                   <div>
                     {picks.length
                       ? picks.map((entry) => (
-                          <strong key={entry.overall}>
+                          <button
+                            type="button"
+                            className="roster-player"
+                            key={entry.overall}
+                            onClick={() => openDetail(entry.player.id)}
+                          >
                             {entry.player.name}
-                            {entry.player.byeWeek ? ` · W${entry.player.byeWeek}` : ""}
-                          </strong>
+                            {entry.player.byeWeek ? ` · Bye ${entry.player.byeWeek}` : ""}
+                          </button>
                         ))
                       : <em>Open</em>}
                   </div>
@@ -1782,7 +1877,7 @@ export function DraftAssistant() {
                       >
                         <span>
                           {pick.round}.{pick.slot}
-                          {pick.player.byeWeek ? ` · W${pick.player.byeWeek}` : ""}
+                          {pick.player.byeWeek ? ` · Bye ${pick.player.byeWeek}` : ""}
                         </span>
                         <b>{pick.player.name}</b>
                         <small>{pick.player.position}</small>

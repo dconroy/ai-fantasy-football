@@ -113,12 +113,17 @@ export async function refreshSleeperPlayers(): Promise<SleeperRecord[] | null> {
  * from Sleeper (falling back to a stale cache if the download fails). Returns
  * null only when no data is available at all.
  */
-export async function getSleeperIndex(): Promise<Map<string, SleeperHit> | null> {
+export async function getSleeperRecords(): Promise<SleeperRecord[] | null> {
   const cached = await readCached();
   const fresh =
     cached && Date.now() - cached.fetchedAt.getTime() < MAX_AGE_MS
       ? cached.records
       : (await refreshSleeperPlayers()) ?? cached?.records ?? null;
+  return fresh;
+}
+
+export async function getSleeperIndex(): Promise<Map<string, SleeperHit> | null> {
+  const fresh = await getSleeperRecords();
   if (!fresh) return null;
 
   const index = new Map<string, SleeperHit>();
