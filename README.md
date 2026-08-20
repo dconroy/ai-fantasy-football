@@ -179,8 +179,14 @@ room and choose an open seat, or create one with Standard/Half-PPR/PPR scoring, 
 rosters, 10–16 rounds, and your preferred slot. A new room provides a unique invite link
 for friends; they enter their team name and choose any remaining seat. Robots fill empty
 seats, idle humans auto-draft after about
-30 seconds, and completed rooms are recycled after ~45 minutes. “Back to lobby” leaves the
-shared room intact instead of resetting everyone’s draft.
+30 seconds. Completed rooms are recycled after ~45 minutes, and unfinished rooms disappear
+from the lobby after one hour without an active manager. “Back to lobby” leaves the shared
+room intact instead of resetting everyone’s draft.
+
+Demo rooms include a floating chat for seated managers; spectators can read it. Messages
+expire after one hour. Set `GIPHY_API_KEY` locally and in Vercel to enable unrestricted GIF
+search through the GIPHY API. The key stays server-side, and the picker displays the required
+“Powered by GIPHY” attribution.
 
 ## Project layout
 

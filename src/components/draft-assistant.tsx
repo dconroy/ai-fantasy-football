@@ -32,6 +32,7 @@ import { MOCK_PLAYERS } from "@/fixtures/mock-players";
 import { resolvePlayerIdentity } from "@/domain/identity";
 import { formatStamp } from "@/lib/build-info";
 import { DraftReportCard } from "@/components/draft-report-card";
+import { DemoChatPanel } from "@/components/demo-chat-panel";
 import { buildDraftReport } from "@/domain/draft-report";
 
 interface RemoteDraftPick {
@@ -2548,6 +2549,13 @@ export function DraftAssistant({
           )}
         </div>
       </section>
+      {isDemo && draftId ? (
+        <DemoChatPanel
+          roomId={draftId}
+          canPost={hasDraftSeat && !demoIdle}
+          currentSlot={hasDraftSeat ? state.draft.userSlot : null}
+        />
+      ) : null}
     </main>
   );
 }

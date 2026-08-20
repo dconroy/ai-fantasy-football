@@ -23,10 +23,12 @@ import {
   loadMockSnapshot,
   saveMockConfig,
 } from "@/adapters/yahoo/mock-store";
+import { deleteDemoChatForRoom } from "@/persistence/demo-chat";
 
 export const DEMO_ROOM_PREFIX = "demo:";
 const DEMO_AUTO_PICK_MS = 30_000;
 const COMPLETE_TTL_MS = 45 * 60 * 1000;
+const IDLE_ROOM_TTL_MS = 60 * 60 * 1000;
 // A room with no mock config is a half-created/orphaned shell (e.g. recreated
 // from a stale cookie). Give creation a grace window, then recycle it.
 const BROKEN_ROOM_TTL_MS = 2 * 60 * 1000;
@@ -246,6 +248,7 @@ export function isDemoRoomId(id: string) {
 }
 
 async function deleteRoom(roomId: string) {
+  await deleteDemoChatForRoom(roomId).catch(() => undefined);
   await prisma.leagueDraft.delete({ where: { id: roomId } }).catch(() => undefined);
   await prisma.syncCheckpoint
     .delete({ where: { id: `mock:${leagueKeyFor(roomId)}` } })
@@ -284,6 +287,28 @@ async function recycleStaleRooms() {
     const stale = now - room.updatedAt.getTime() > COMPLETE_TTL_MS;
     if (complete && stale) {
       await deleteRoom(room.id);
+      continue;
+    }
+    if (!complete) {
+      const seatRow = await prisma.syncCheckpoint.findUnique({
+        where: { id: seatSeenKey(room.id) },
+        select: { payload: true, syncedAt: true },
+      });
+      const activeSeats = activeSeatSet(
+        undefined,
+        parseSeatLeases(seatRow?.payload),
+        now,
+      );
+      const lastActivity = Math.max(
+        room.updatedAt.getTime(),
+        seatRow?.syncedAt.getTime() ?? 0,
+      );
+      if (
+        activeSeats.size === 0 &&
+        now - lastActivity > IDLE_ROOM_TTL_MS
+      ) {
+        await deleteRoom(room.id);
+      }
     }
   }
 }

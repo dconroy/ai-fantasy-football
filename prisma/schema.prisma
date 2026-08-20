@@ -114,3 +114,19 @@ model LeagueDraft {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
+
+model DemoChatMessage {
+  id         String   @id @default(cuid())
+  roomId     String
+  authorName String
+  authorSlot Int
+  kind       String
+  content    String
+  gifUrl     String?
+  gifAlt     String?
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  @@index([roomId, createdAt])
+  @@index([expiresAt])
+}
