@@ -28,13 +28,22 @@ export async function fetchFfCalculatorImport(
   const format = FORMAT[scoring];
   const cacheSource = `ffcalc-${scoring}`;
   const year = new Date().getUTCFullYear();
-  const url = `https://fantasyfootballcalculator.com/api/v1/adp/${format}?teams=12&year=${year}`;
+  const url =
+    `https://fantasyfootballcalculator.com/api/v1/adp/${format}` +
+    `?position=all&teams=12&year=${year}`;
   try {
     const response = await fetch(url, {
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Draft Dojo (https://dojo.football)",
+      },
     });
     if (!response.ok) throw new Error(`FF Calculator returned ${response.status}`);
+    if (!response.headers.get("content-type")?.includes("application/json")) {
+      throw new Error("FF Calculator returned a non-JSON response");
+    }
     const body = (await response.json()) as { players?: FfPlayer[] };
     const raw = body.players ?? [];
     const players: ChenPlayerRecord[] = [];

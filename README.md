@@ -169,7 +169,7 @@ independent:
 | Expert | Setup |
 |---|---|
 | **Boris Chen** | Default. Public CSVs, no key. |
-| **FF Calculator ADP** | Market ADP, no key. |
+| **Sleeper ADP** | Market ADP, no key. |
 | **FantasyPros ECR** | Hidden until `FANTASYPROS_API_KEY` is set. Request an API key from FantasyPros, add it to `.env` (and to your Vercel env vars, then redeploy). |
 
 ## Public demo
