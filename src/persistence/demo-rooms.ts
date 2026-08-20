@@ -396,10 +396,16 @@ export async function findOrCreateOpenDemoRoom(): Promise<{
   const rooms = await prisma.leagueDraft.findMany({
     where: { id: { startsWith: DEMO_ROOM_PREFIX } },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      leagueKey: true,
+      teamCount: true,
+      rounds: true,
+      picksJson: true,
+    },
   });
   for (const row of rooms) {
-    const shared = await getOrCreateLeagueDraft(row.id);
-    const config = shared.leagueKey ? await loadMockConfig(shared.leagueKey) : null;
+    const config = row.leagueKey ? await loadMockConfig(row.leagueKey) : null;
     const active = config
       ? activeSeatSet(
           config.humanSlots,
@@ -408,14 +414,29 @@ export async function findOrCreateOpenDemoRoom(): Promise<{
           isDemoClockStarted(config),
         )
       : new Set<number>();
-    const seats = openSeats(config, shared, active);
+    const seats = openSeats(
+      config,
+      {
+        id: row.id,
+        leagueKey: row.leagueKey,
+        mode: "live",
+        teamCount: row.teamCount,
+        rounds: row.rounds,
+        picks: picksFromJson(row.picksJson) as SharedDraft["picks"],
+        players: [],
+        importedAt: "",
+        source: "",
+        updatedAt: "",
+      },
+      active,
+    );
     if (seats.broken || !config) continue; // skip orphaned shells entirely
     const snapshot = await loadMockSnapshot(config.leagueKey);
     const complete =
       seats.complete ||
       (snapshot?.draftResults.length ?? 0) >= config.teamCount * config.rounds;
     if (!complete && seats.openCount > 0) {
-      return { shared, config };
+      return { shared: await getOrCreateLeagueDraft(row.id), config };
     }
   }
   const created = await createPausedRoom();
@@ -437,20 +458,36 @@ export interface DemoRoomSummary {
   readonly complete: boolean;
 }
 
+function picksFromJson(picksJson: string): unknown[] {
+  try {
+    const parsed = JSON.parse(picksJson) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Live demo rooms with seat availability, for the landing-page room list. */
 export async function listDemoRooms(): Promise<DemoRoomSummary[]> {
   await recycleStaleRooms();
   const rows = await prisma.leagueDraft.findMany({
     where: { id: { startsWith: DEMO_ROOM_PREFIX } },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      leagueKey: true,
+      teamCount: true,
+      rounds: true,
+      source: true,
+      picksJson: true,
+    },
   });
   const summaries: DemoRoomSummary[] = [];
   for (const row of rows) {
-    const shared = await getOrCreateLeagueDraft(row.id);
-    if (!shared.leagueKey) continue; // orphaned shell
-    const config = await loadMockConfig(shared.leagueKey);
+    if (!row.leagueKey) continue; // orphaned shell
+    const config = await loadMockConfig(row.leagueKey);
     if (!config) continue;
-    const snapshot = await loadMockSnapshot(shared.leagueKey);
+    const snapshot = await loadMockSnapshot(row.leagueKey);
     const active = activeSeatSet(
       config.humanSlots,
       await loadSeatSeen(row.id),
@@ -458,20 +495,23 @@ export async function listDemoRooms(): Promise<DemoRoomSummary[]> {
       isDemoClockStarted(config),
     );
     const totalPicks = config.teamCount * config.rounds;
-    const picks = Math.max(shared.picks.length, snapshot?.draftResults.length ?? 0);
+    const picks = Math.max(
+      picksFromJson(row.picksJson).length,
+      snapshot?.draftResults.length ?? 0,
+    );
     const complete = picks >= totalPicks;
     const openSeatList = Array.from(
-      { length: shared.teamCount },
+      { length: row.teamCount },
       (_, index) => index + 1,
     ).filter((slot) => !active.has(slot));
     summaries.push({
       id: row.id,
-      totalSeats: shared.teamCount,
+      totalSeats: row.teamCount,
       activeSeats: active.size,
-      openSeats: complete ? 0 : Math.max(0, shared.teamCount - active.size),
+      openSeats: complete ? 0 : Math.max(0, row.teamCount - active.size),
       openSeatList: complete ? [] : openSeatList,
-      scoring: scoringFromSource(shared.source),
-      rounds: shared.rounds,
+      scoring: scoringFromSource(row.source),
+      rounds: row.rounds,
       picks,
       totalPicks,
       started: Boolean(config.startedAtIso) && Number.isFinite(Date.parse(config.startedAtIso)),

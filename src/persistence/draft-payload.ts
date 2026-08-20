@@ -1,26 +1,28 @@
 import type { User } from "@prisma/client";
 import type { DemoClaims } from "@/auth/demo-session";
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
+import { playerRevision } from "@/lib/board-sync";
 import {
   draftStateFor,
+  getDraftMeta,
   getOrCreateLeagueDraft,
   listMemberSeats,
   userPrefs,
+  type SharedDraft,
 } from "@/persistence/league-draft";
 import {
   demoClientState,
   demoSeatMembers,
 } from "@/persistence/demo-rooms";
 
-export async function boardPayload(
-  draftId: string,
+async function withAudience(
+  shared: SharedDraft,
   user: User | null,
   demo: DemoClaims | null,
 ) {
-  const shared = await getOrCreateLeagueDraft(draftId);
   if (demo) {
     const slot = demo.slot ?? 0;
-    const members = await demoSeatMembers(draftId);
+    const members = await demoSeatMembers(shared.id);
     const member = members.find((candidate) => candidate.draftSlot === slot);
     const displayName =
       demo.role === "play"
@@ -33,8 +35,8 @@ export async function boardPayload(
       me: {
         id:
           demo.role === "play"
-            ? `demo:${draftId}:${slot}`
-            : `demo:${draftId}:spectator`,
+            ? `demo:${shared.id}:${slot}`
+            : `demo:${shared.id}:spectator`,
         displayName,
         role: "member" as const,
         draftSlot: slot,
@@ -48,13 +50,13 @@ export async function boardPayload(
         role: demo.role,
         slot: demo.slot,
         roomId: demo.roomId,
-        ...(await demoClientState(draftId)),
+        ...(await demoClientState(shared.id)),
       },
     };
   }
   if (!user) throw new Error("Authentication required");
   const prefs = userPrefs(user);
-  const members = await listMemberSeats(draftId);
+  const members = await listMemberSeats(shared.id);
   return {
     ...shared,
     draft: draftStateFor(shared, prefs.draftSlot),
@@ -66,4 +68,52 @@ export async function boardPayload(
       ...prefs,
     },
   };
+}
+
+export async function boardPayload(
+  draftId: string,
+  user: User | null,
+  demo: DemoClaims | null,
+) {
+  return withAudience(await getOrCreateLeagueDraft(draftId), user, demo);
+}
+
+/** Heartbeat: skip `playersJson` unless rankings changed. */
+export async function boardPollPayload(
+  draftId: string,
+  user: User | null,
+  demo: DemoClaims | null,
+  query: { readonly since?: string | null; readonly playersRev?: string | null },
+) {
+  const meta = await getDraftMeta(draftId);
+  if (!meta) return boardPayload(draftId, user, demo);
+
+  const rev = playerRevision(meta.importedAt, meta.source);
+  const playersUnchanged = Boolean(query.playersRev) && query.playersRev === rev;
+  const boardUnchanged = Boolean(query.since) && query.since === meta.updatedAt;
+  const stub: SharedDraft = { ...meta, players: [] };
+
+  if (boardUnchanged && playersUnchanged) {
+    const envelope = await withAudience(stub, user, demo);
+    return {
+      unchanged: true as const,
+      updatedAt: meta.updatedAt,
+      importedAt: meta.importedAt,
+      source: meta.source,
+      members: envelope.members,
+      me: envelope.me,
+      ..."demo" in envelope && envelope.demo ? { demo: envelope.demo } : {},
+    };
+  }
+
+  if (playersUnchanged) {
+    const envelope = await withAudience(stub, user, demo);
+    return {
+      ...envelope,
+      players: undefined,
+      playersOmitted: true as const,
+    };
+  }
+
+  return boardPayload(draftId, user, demo);
 }

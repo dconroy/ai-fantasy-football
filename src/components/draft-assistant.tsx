@@ -42,6 +42,7 @@ import {
   rpBotTeamName,
   type DemoSeatKind,
 } from "@/domain/demo-labels";
+import { mergePollPlayers, playerRevision } from "@/lib/board-sync";
 
 interface RemoteDraftPick {
   pick: number;
@@ -122,15 +123,17 @@ interface PersistedUiState {
 }
 
 interface DraftPayload {
-  mode: "mock" | "live";
-  draft: DraftState;
-  players: readonly Player[];
-  importedAt: string;
-  source: string;
+  mode?: "mock" | "live";
+  draft?: DraftState;
+  players?: readonly Player[];
+  importedAt?: string;
+  source?: string;
   updatedAt: string;
   leagueKey?: string | null;
   members: MemberSeat[];
   me: MeState;
+  unchanged?: boolean;
+  playersOmitted?: boolean;
 }
 
 interface DemoInfo {
@@ -359,6 +362,28 @@ export function DraftAssistant({
   }
 
   function applyPayload(payload: DraftPayload & { demo?: DemoInfo }, message?: string) {
+    if (payload.unchanged) {
+      setMembers(payload.members);
+      if (payload.me) setMe(payload.me);
+      if (payload.demo) {
+        setDraftId(payload.demo.roomId);
+        setDemoRole(payload.demo.role);
+        if (payload.demo.role === "play" && payload.me) {
+          setDemoTeamName(payload.me.teamName);
+        }
+        if (payload.demo.takenSlots) setTakenSlots(payload.demo.takenSlots);
+        setDemoStarted(payload.demo.started !== false);
+      }
+      if (payload.updatedAt) {
+        setState((prev) =>
+          prev.updatedAt === payload.updatedAt
+            ? prev
+            : { ...prev, updatedAt: payload.updatedAt },
+        );
+      }
+      return;
+    }
+    if (!payload.draft || !payload.me) return;
     // Spectators (demo "watch") report draftSlot 0 — no seat. Clamp any invalid
     // slot to a real one so snake math (nextSelectionForSlot, recommendations)
     // never throws "slot must be between 1 and N" and crashes the whole page.
@@ -374,9 +399,9 @@ export function DraftAssistant({
         ...payload.draft,
         userSlot: safeUserSlot,
       },
-      players: payload.players,
-      importedAt: payload.importedAt,
-      source: payload.source,
+      players: mergePollPlayers(stateRef.current.players, payload),
+      importedAt: payload.importedAt ?? stateRef.current.importedAt,
+      source: payload.source ?? stateRef.current.source,
       pins: payload.demo ? stateRef.current.pins : payload.me.pins,
       avoids: payload.demo ? stateRef.current.avoids : payload.me.avoids,
       weights: payload.demo ? stateRef.current.weights : payload.me.weights,
@@ -418,7 +443,7 @@ export function DraftAssistant({
       })
       .then((payload: (DraftPayload & { demo?: DemoInfo }) | null) => {
         if (cancelled) return;
-        if (payload?.draft && payload.players && payload.me) {
+        if (payload?.draft && payload.players?.length && payload.me) {
           if (payload.demo) setDraftId(payload.demo.roomId);
           applyPayload(payload, isDemo ? "Demo room ready" : "Loaded shared draft board");
         } else if (!isDemo) {
@@ -454,11 +479,15 @@ export function DraftAssistant({
 
   useEffect(() => {
     if (!ready) return;
-    const path = draftId
-      ? `/api/draft?draftId=${encodeURIComponent(draftId)}`
-      : "/api/draft";
     const timer = window.setInterval(() => {
-      fetch(path, { cache: "no-store" })
+      const current = stateRef.current;
+      const params = new URLSearchParams();
+      if (draftId) params.set("draftId", draftId);
+      if (current.updatedAt) params.set("since", current.updatedAt);
+      if (current.importedAt && current.source) {
+        params.set("playersRev", playerRevision(current.importedAt, current.source));
+      }
+      fetch(`/api/draft?${params}`, { cache: "no-store" })
         .then(async (response) => {
           const body = await response.json().catch(() => null);
           if (!response.ok) {
@@ -466,9 +495,8 @@ export function DraftAssistant({
           }
           return body;
         })
-        .then((payload: DraftPayload | null) => {
-          if (!payload?.updatedAt) return;
-          if (!isDemo && payload.updatedAt === stateRef.current.updatedAt) return;
+        .then((payload: (DraftPayload & { demo?: DemoInfo }) | null) => {
+          if (!payload?.updatedAt && !payload?.unchanged) return;
           applyPayload(payload);
         })
         .catch((error) => {

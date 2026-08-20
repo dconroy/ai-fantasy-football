@@ -25,6 +25,9 @@ import { byeWeekForTeam } from "@/config/nfl-byes";
 import { normalizeTeam } from "@/domain/identity";
 import type { User } from "@prisma/client";
 import type { Position } from "@/domain";
+import { playerRevision } from "@/lib/board-sync";
+
+export { playerRevision };
 
 export const LEAGUE_DRAFT_ID = "house-2026";
 
@@ -39,6 +42,41 @@ export interface SharedDraft {
   readonly importedAt: string;
   readonly source: string;
   readonly updatedAt: string;
+}
+
+const DRAFT_META_SELECT = {
+  id: true,
+  leagueKey: true,
+  mode: true,
+  teamCount: true,
+  rounds: true,
+  picksJson: true,
+  importedAt: true,
+  source: true,
+  updatedAt: true,
+} as const;
+
+export type DraftMeta = Omit<SharedDraft, "players">;
+
+export async function getDraftMeta(
+  draftId = LEAGUE_DRAFT_ID,
+): Promise<DraftMeta | null> {
+  const row = await prisma.leagueDraft.findUnique({
+    where: { id: draftId },
+    select: DRAFT_META_SELECT,
+  });
+  if (!row) return null;
+  return {
+    id: row.id,
+    leagueKey: row.leagueKey,
+    mode: row.mode === "live" ? "live" : "mock",
+    teamCount: row.teamCount,
+    rounds: row.rounds,
+    picks: parseJson<Pick[]>(row.picksJson, []),
+    importedAt: row.importedAt,
+    source: row.source,
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
 export interface MemberSeat {

@@ -12,7 +12,8 @@ import {
   saveSharedDraft,
   touchLastSeen,
 } from "@/persistence/league-draft";
-import { boardPayload } from "@/persistence/draft-payload";
+import { boardPayload, boardPollPayload } from "@/persistence/draft-payload";
+import { isDraftPoll } from "@/lib/board-sync";
 import { touchDemoSeat } from "@/persistence/demo-rooms";
 import type { ChenImport } from "@/adapters/chen/boris-chen";
 import type { DraftState, Player } from "@/domain";
@@ -31,6 +32,14 @@ export async function GET(request: Request) {
         demo.sessionId,
       ).catch(() => false);
       if (!touched) throw new AuthError("Your demo seat expired or was reclaimed", 401);
+    }
+    const url = new URL(request.url);
+    const since = url.searchParams.get("since");
+    const playersRev = url.searchParams.get("playersRev");
+    if (isDraftPoll({ since, playersRev })) {
+      return NextResponse.json(
+        await boardPollPayload(draftId, user, demo, { since, playersRev }),
+      );
     }
     await ensureFreshBoardPlayers(draftId);
     await ensureBoardByes(draftId);
