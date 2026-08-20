@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import styles from "./landing.module.css";
+
 interface Room {
   id: string;
   name: string;
@@ -94,10 +96,10 @@ export function LiveRooms() {
   const summary = summarizeLiveRooms(data?.rooms ?? []);
 
   return (
-    <section className="live-rooms" aria-live="polite">
-      <div className="live-rooms-head">
-        <span className="live-rooms-pulse" aria-hidden="true" />
-        <span className="live-rooms-count">
+    <div className={styles.liveRooms} aria-live="polite">
+      <div className={styles.liveRoomsHead}>
+        <span className={styles.liveRoomsPulse} aria-hidden="true" />
+        <span className={styles.liveRoomsCount}>
           {!loaded
             ? "Checking live drafts…"
             : loadError
@@ -105,19 +107,19 @@ export function LiveRooms() {
               : summary.headline}
         </span>
         {loaded && !loadError && summary.activePlayers > 0 && (
-          <span className="live-rooms-players">
+          <span className={styles.liveRoomsPlayers}>
             {summary.activePlayers} drafting now
           </span>
         )}
       </div>
 
       {summary.joinable.length > 0 ? (
-        <ul className="live-rooms-list">
+        <ul className={styles.liveRoomsList}>
           {summary.joinable.map((room) => (
             <li key={room.id}>
-              <Link className="live-room" href={roomHref(room.id)}>
-                <span className="live-room-name">{room.name}</span>
-                <span className="live-room-seats">
+              <Link className={styles.liveRoom} href={roomHref(room.id)}>
+                <span className={styles.liveRoomName}>{room.name}</span>
+                <span className={styles.liveRoomSeats}>
                         {room.scoring === "half-ppr"
                           ? "Half PPR"
                           : room.scoring === "ppr"
@@ -125,7 +127,7 @@ export function LiveRooms() {
                             : "Standard"}{" "}
                         · {room.totalSeats} teams · {room.openSeats} open
                 </span>
-                <span className="live-room-join">
+                <span className={styles.liveRoomJoin}>
                   {room.started ? "Drafting" : "Waiting"} · Join →
                 </span>
               </Link>
@@ -133,12 +135,13 @@ export function LiveRooms() {
           ))}
         </ul>
       ) : !loadError && summary.emptyPrompt ? (
-        <p className="live-rooms-empty">{summary.emptyPrompt}</p>
+        <p className={styles.liveRoomsEmpty}>{summary.emptyPrompt}</p>
       ) : null}
 
-      <Link className="live-rooms-cta" href="/demo">
-        {summary.cta} →
+      <Link className={styles.liveRoomsCta} href="/demo">
+        <span>{summary.cta}</span>
+        <span aria-hidden="true">JOIN ROOM ↗</span>
       </Link>
-    </section>
+    </div>
   );
 }

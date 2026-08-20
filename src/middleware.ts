@@ -26,6 +26,7 @@ const PUBLIC_EXACT = new Set([
 function isPublic(pathname: string) {
   if (PUBLIC_EXACT.has(pathname)) return true;
   if (pathname.startsWith("/media/")) return true;
+  if (pathname.startsWith("/landing/")) return true;
   if (pathname.startsWith("/api/demo/")) return true;
   if (pathname.startsWith("/docs/screenshots/")) return true;
   return false;

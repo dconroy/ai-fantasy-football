@@ -1,196 +1,165 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
+
+import { WarRoomHero } from "@/components/landing/war-room-hero";
+
 import { LiveRooms } from "./live-rooms";
+import styles from "./landing.module.css";
 
 export const metadata: Metadata = {
   title: "Draft Dojo",
   description:
-    "Open-source fantasy football draft rooms with live, roster-aware recommendations.",
+    "A live fantasy football draft board that recalculates your best five picks after every selection.",
 };
-
-const topFive = [
-  { rank: 1, name: "Bijan Robinson", pos: "RB", team: "ATL", tier: "Tier 1", note: "Best available at your seat", move: "up", imageUrl: "https://sleepercdn.com/content/nfl/players/9509.jpg" },
-  { rank: 2, name: "Ja'Marr Chase", pos: "WR", team: "CIN", tier: "Tier 1", note: "Tier cliff — grab now", move: "up", imageUrl: "https://sleepercdn.com/content/nfl/players/7564.jpg" },
-  { rank: 3, name: "Breece Hall", pos: "RB", team: "NYJ", tier: "Tier 2", note: "Scarcity into the turn", move: "same", imageUrl: "https://sleepercdn.com/content/nfl/players/8155.jpg" },
-  { rank: 4, name: "Puka Nacua", pos: "WR", team: "LAR", tier: "Tier 2", note: "ADP vs the clock", move: "down", imageUrl: "https://sleepercdn.com/content/nfl/players/9493.jpg" },
-  { rank: 5, name: "Sam LaPorta", pos: "TE", team: "DET", tier: "Tier 2", note: "Roster balance", move: "up", imageUrl: "https://sleepercdn.com/content/nfl/players/10859.jpg" },
-] as const;
-
-const modes = [
-  {
-    number: "01",
-    title: "Practice mock",
-    body: "Robots fill the empty seats and the room pauses on every human pick. Draft as slow or as fast as you want.",
-  },
-  {
-    number: "02",
-    title: "Watch a live draft",
-    body: "Follow along on Sleeper or Yahoo. The board tracks every pick in real time — you still click in your app.",
-  },
-  {
-    number: "03",
-    title: "Report card",
-    body: "When the board fills, every team gets graded on a curve. Bragging rights, delivered.",
-  },
-];
 
 export default function LandingPage() {
   return (
-    <main className="landing">
-      <div className="landing-glow" aria-hidden="true" />
+    <main className={styles.landing}>
+      <div className={styles.broadcastBar}>
+        <span>2026 DRAFT CENTER</span>
+        <span>LIVE BOARDS · ROSTER-AWARE RANKS · POST-DRAFT GRADES</span>
+        <span>AUG 19 · PRESEASON WK 2</span>
+      </div>
 
-      <header className="landing-nav">
-        <span className="landing-mark">
-          <span className="landing-mark-dot" aria-hidden="true" />
-          Draft&nbsp;Dojo
-        </span>
+      <header className={styles.nav}>
+        <Link className={styles.brand} href="/" aria-label="Draft Dojo home">
+          <Image src="/icon.svg" width={42} height={42} alt="" priority />
+          <span>
+            <strong>DRAFT DOJO</strong>
+            <small>FANTASY WAR ROOM</small>
+          </span>
+        </Link>
         <nav>
-          <a
-            href="https://github.com/dconroy/ai-fantasy-football"
-            target="_blank"
-            rel="noreferrer"
-          >
-            GitHub
+          <Link href="/demo">Live rooms</Link>
+          <a href="#film-room">Film room</a>
+          <a href="https://github.com/dconroy/ai-fantasy-football" target="_blank" rel="noreferrer">
+            Source
           </a>
-          <Link href="/demo">Demo</Link>
-          <Link className="landing-nav-cta" href="/login">
-            Connect your league
+          <Link className={styles.navCta} href="/login">
+            Sync a league
           </Link>
         </nav>
       </header>
 
-      <div className="landing-tape" aria-label="Draft Dojo capabilities">
-        <span>Live board</span>
-        <span aria-hidden="true">✦</span>
-        <span>Five picks. Recalculated.</span>
-        <span aria-hidden="true">✦</span>
-        <span>Sleeper + Yahoo</span>
-        <span aria-hidden="true">✦</span>
-        <span>No autopick. You call it.</span>
-      </div>
-
-      <section className="landing-hero">
-        <div className="landing-hero-copy">
-          <p className="eyebrow">
-            <span className="eyebrow-live" aria-hidden="true" />
-            Live board · Pick 1.07
-          </p>
+      <section className={styles.hero}>
+        <div className={styles.heroCopy}>
+          <p className={styles.kicker}>BUILT FOR THE 90 SECONDS THAT DECIDE YOUR SEASON</p>
           <h1>
-            Read the room.<br />
-            <em>Own the turn.</em>
+            Your board changed.
+            <br />
+            <em>Your pick should too.</em>
           </h1>
-          <p className="landing-line">
-            Five picks for your roster, rebuilt every time the board changes.
+          <p className={styles.heroLead}>
+            Draft Dojo watches every selection, reads your roster, and rebuilds your
+            best five before you&apos;re on the clock.
           </p>
-          <p className="landing-attitude">No chatbot fog. Just the board, the clock, and your move.</p>
-          <div className="landing-ctas">
-            <Link className="landing-primary" href="/demo">
-              Try a live demo
-              <span aria-hidden="true">→</span>
+          <div className={styles.heroActions}>
+            <Link className={styles.primaryAction} href="/demo">
+              Enter a draft room <span aria-hidden="true">↗</span>
             </Link>
-            <Link className="landing-secondary" href="/login">
-              Connect your league
+            <Link className={styles.secondaryAction} href="/login">
+              Connect Sleeper or Yahoo
             </Link>
           </div>
-          <p className="landing-trust">
-            Free &amp; open source · MIT licensed · No signup for the demo
-          </p>
-          <LiveRooms />
+          <div className={styles.heroFacts} aria-label="Product facts">
+            <span><b>01</b> No signup for public mocks</span>
+            <span><b>02</b> You make every pick</span>
+            <span><b>03</b> Free and MIT licensed</span>
+          </div>
         </div>
-
-        <figure className="landing-shot">
-          <div className="landing-board">
-            <div className="landing-board-head">
-              <span className="landing-clock">
-                <span className="landing-clock-dot" aria-hidden="true" />
-                On the clock · Pick 1.07
-              </span>
-              <span className="landing-board-tag">Recalculated</span>
-            </div>
-            <p className="landing-board-title">Your top five</p>
-            <ol className="landing-picks">
-              {topFive.map((p) => (
-                <li key={p.rank} className={`landing-pick move-${p.move}`}>
-                  <span className="landing-rank">{p.rank}</span>
-                  <Image
-                    className="landing-player-photo"
-                    src={p.imageUrl}
-                    alt=""
-                    width={38}
-                    height={38}
-                    unoptimized
-                  />
-                  <span className="landing-pick-main">
-                    <span className="landing-pick-name">{p.name}</span>
-                    <span className="landing-pick-note">{p.note}</span>
-                  </span>
-                  <span className="landing-pick-meta">
-                    <span className={`landing-pos pos-${p.pos}`}>{p.pos}</span>
-                    <span className="landing-team">{p.team}</span>
-                  </span>
-                  <span className={`landing-move move-${p.move}`} aria-hidden="true">
-                    {p.move === "up" ? "▲" : p.move === "down" ? "▼" : "—"}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </figure>
+        <WarRoomHero />
       </section>
 
-      <section className="landing-modes">
-        {modes.map((m) => (
-          <article key={m.title}>
-            <span className="landing-mode-number" aria-hidden="true">{m.number}</span>
-            <h2>{m.title}</h2>
-            <p>{m.body}</p>
-          </article>
-        ))}
+      <section className={styles.liveSection} aria-labelledby="live-heading">
+        <header>
+          <p>PUBLIC DRAFT NETWORK</p>
+          <h2 id="live-heading">A room is open. Take a seat.</h2>
+        </header>
+        <LiveRooms />
       </section>
 
-      <section className="landing-source">
-        <div>
-          <p className="eyebrow">Open source · MIT licensed</p>
-          <h2>See every recommendation. Change every assumption.</h2>
+      <section className={styles.filmRoom} id="film-room">
+        <div className={styles.sectionHeading}>
+          <p>HOW THE BOARD THINKS</p>
+          <h2>One draft. Three views of the room.</h2>
           <p>
-            The ranking adapters, draft model, recommendation weights, multiplayer
-            rooms, and report-card logic are public. Audit the math, run your own
-            instance, or help shape the next pick.
+            Rankings tell you who is good. Draft Dojo tells you who fits this roster,
+            at this pick, against this room.
           </p>
         </div>
-        <div className="landing-source-actions">
-          <a
-            className="landing-primary"
-            href="https://github.com/dconroy/ai-fantasy-football"
-            target="_blank"
-            rel="noreferrer"
-          >
-            View the source
-            <span aria-hidden="true">↗</span>
-          </a>
-          <a
-            className="landing-secondary"
-            href="https://github.com/dconroy/ai-fantasy-football/issues"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open an issue
-          </a>
+
+        <div className={styles.proofGrid}>
+          <figure className={styles.proofPrimary}>
+            <div className={styles.proofLabel}>
+              <span>01 / THE LIVE BOARD</span>
+              <strong>Every pick in context</strong>
+            </div>
+            <Image
+              src="/landing/draft-board.png"
+              width={1512}
+              height={982}
+              alt="Draft Dojo live snake draft board"
+              sizes="(max-width: 900px) 100vw, 65vw"
+            />
+          </figure>
+          <div className={styles.proofStack}>
+            <figure>
+              <div className={styles.proofLabel}>
+                <span>02 / THE READ</span>
+                <strong>Why the board moved</strong>
+              </div>
+              <Image
+                src="/landing/ai-insights.png"
+                width={1512}
+                height={982}
+                alt="Draft Dojo roster and draft insights"
+                sizes="(max-width: 900px) 100vw, 35vw"
+              />
+            </figure>
+            <figure>
+              <div className={styles.proofLabel}>
+                <span>03 / THE VERDICT</span>
+                <strong>Grades when the clock stops</strong>
+              </div>
+              <Image
+                src="/landing/report-card.png"
+                width={1512}
+                height={982}
+                alt="Draft Dojo post-draft report card"
+                sizes="(max-width: 900px) 100vw, 35vw"
+              />
+            </figure>
+          </div>
         </div>
       </section>
 
-      <footer className="landing-foot">
-        <span>
+      <section className={styles.sourceSection}>
+        <div className={styles.sourceStamp} aria-hidden="true">
+          <span>OPEN</span>
+          <strong>SOURCE</strong>
+          <small>MIT · 2026</small>
+        </div>
+        <div>
+          <p>THE WHOLE PLAYBOOK IS PUBLIC</p>
+          <h2>Audit the ranking math. Change the weights. Run your own room.</h2>
+        </div>
+        <a href="https://github.com/dconroy/ai-fantasy-football" target="_blank" rel="noreferrer">
+          View the repository <span aria-hidden="true">↗</span>
+        </a>
+      </section>
+
+      <footer className={styles.footer}>
+        <Link className={styles.brand} href="/">
+          <Image src="/icon.svg" width={34} height={34} alt="" />
+          <span><strong>DRAFT DOJO</strong><small>FANTASY WAR ROOM</small></span>
+        </Link>
+        <p>
           You still make the pick in Sleeper or Yahoo. Not affiliated with Yahoo,
           Sleeper, or any ranking publisher.
-        </span>
-        <a
-          href="https://github.com/dconroy/ai-fantasy-football"
-          target="_blank"
-          rel="noreferrer"
-        >
-          GitHub · MIT
+        </p>
+        <a href="https://github.com/dconroy/ai-fantasy-football" target="_blank" rel="noreferrer">
+          GITHUB · MIT
         </a>
       </footer>
     </main>

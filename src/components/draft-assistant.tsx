@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   analyzeDraftRoster,
   availablePlayers,
@@ -69,9 +69,45 @@ interface SyncSnapshot {
 }
 
 const STORAGE_KEY = "draft-room-2026-v1";
+const TURN_SOUND_STORAGE_KEY = "draft-room-turn-sound";
 const POSITIONS: readonly (Position | "ALL")[] = [
   "ALL", "QB", "RB", "WR", "TE", "K", "DEF",
 ];
+
+function createAudioContext(): AudioContext | null {
+  const AudioContextConstructor =
+    window.AudioContext ??
+    (window as Window & { webkitAudioContext?: typeof AudioContext })
+      .webkitAudioContext;
+  return AudioContextConstructor ? new AudioContextConstructor() : null;
+}
+
+function playTurnChime(context: AudioContext) {
+  const startAt = context.currentTime + 0.02;
+  const master = context.createGain();
+  master.gain.setValueAtTime(0.7, startAt);
+  master.connect(context.destination);
+
+  for (const note of [
+    { frequency: 659.25, start: 0, duration: 0.2 },
+    { frequency: 880, start: 0.22, duration: 0.38 },
+  ]) {
+    const oscillator = context.createOscillator();
+    const envelope = context.createGain();
+    const noteStart = startAt + note.start;
+    const noteEnd = noteStart + note.duration;
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(note.frequency, noteStart);
+    envelope.gain.setValueAtTime(0.0001, noteStart);
+    envelope.gain.exponentialRampToValueAtTime(0.16, noteStart + 0.015);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, noteEnd);
+    oscillator.connect(envelope);
+    envelope.connect(master);
+    oscillator.start(noteStart);
+    oscillator.stop(noteEnd);
+  }
+}
 
 interface MemberSeat {
   id: string;
@@ -298,6 +334,8 @@ export function DraftAssistant({
   const [previewMember, setPreviewMember] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [dark, setDark] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundPreferenceReady, setSoundPreferenceReady] = useState(false);
   const [yahooConnected, setYahooConnected] = useState(false);
   const [notice, setNotice] = useState("Simulation ready");
   const [leagueKey, setLeagueKey] = useState("");
@@ -327,6 +365,18 @@ export function DraftAssistant({
     "idle",
   );
   const [chenBusy, setChenBusy] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const previousIsMyTurn = useRef<boolean | null>(null);
+  const ensureTurnAudio = useCallback(() => {
+    let context = audioContextRef.current;
+    if (!context || context.state === "closed") {
+      context = createAudioContext();
+      audioContextRef.current = context;
+    }
+    if (context?.state === "suspended") {
+      void context.resume().catch(() => undefined);
+    }
+  }, []);
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
@@ -338,6 +388,36 @@ export function DraftAssistant({
   useEffect(
     () => () => {
       if (inviteCopiedTimer.current) clearTimeout(inviteCopiedTimer.current);
+    },
+    [],
+  );
+  useEffect(() => {
+    setSoundEnabled(
+      window.localStorage.getItem(TURN_SOUND_STORAGE_KEY) !== "false",
+    );
+    setSoundPreferenceReady(true);
+  }, []);
+  useEffect(() => {
+    if (!soundPreferenceReady || !soundEnabled) return;
+    const unlock = () => {
+      ensureTurnAudio();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [ensureTurnAudio, soundEnabled, soundPreferenceReady]);
+  useEffect(
+    () => () => {
+      const context = audioContextRef.current;
+      audioContextRef.current = null;
+      if (context && context.state !== "closed") {
+        void context.close().catch(() => undefined);
+      }
     },
     [],
   );
@@ -643,6 +723,25 @@ export function DraftAssistant({
       ? "🚨 YOUR PICK — Draft Dojo"
       : "Draft Dojo";
   }, [isMyTurn]);
+  useEffect(() => {
+    if (!ready) {
+      previousIsMyTurn.current = null;
+      return;
+    }
+    const wasMyTurn = previousIsMyTurn.current;
+    previousIsMyTurn.current = isMyTurn;
+    if (wasMyTurn !== false || !isMyTurn || !soundEnabled) return;
+
+    const context = audioContextRef.current;
+    if (!context) return;
+    const play = async () => {
+      if (context.state === "suspended") {
+        await context.resume().catch(() => undefined);
+      }
+      if (context.state === "running") playTurnChime(context);
+    };
+    void play();
+  }, [isMyTurn, ready, soundEnabled]);
   // Tick once a second only while an auto-draft deadline is pending, so the
   // countdown updates without re-rendering the board the rest of the time.
   useEffect(() => {
@@ -1448,15 +1547,6 @@ export function DraftAssistant({
               ? `${takenSlots.length} seated · ${Math.max(0, state.draft.teamCount - takenSlots.length)} open. Invite friends, then start when you're ready — robots will fill empty seats.`
               : "This draft is waiting. Invite friends, then start it when everyone is seated."}
           </span>
-          {demoRole !== "play" ? (
-            <button
-              className="secondary invite-copy-button"
-              type="button"
-              onClick={() => void copyDemoInvite()}
-            >
-              {inviteCopied ? "Copied!" : "Copy invite"}
-            </button>
-          ) : null}
         </div>
       )}
 
@@ -1545,6 +1635,20 @@ export function DraftAssistant({
               : ""}
           </span>
         </div>
+        <button
+          type="button"
+          className="secondary turn-sound-toggle"
+          aria-pressed={soundEnabled}
+          title="Play a chime when your turn starts"
+          onClick={() => {
+            const next = !soundEnabled;
+            setSoundEnabled(next);
+            window.localStorage.setItem(TURN_SOUND_STORAGE_KEY, String(next));
+            if (next) ensureTurnAudio();
+          }}
+        >
+          {soundEnabled ? "🔔 Sound on" : "🔕 Sound off"}
+        </button>
         {adminView ? (
           <>
             <button
@@ -1610,13 +1714,13 @@ export function DraftAssistant({
             ) : (
               restartMockButton
             )}
-            <span className="strip-hint">
-              {isDemo
-                ? demoStarted
+            {(!isDemo || demoStarted) && (
+              <span className="strip-hint">
+                {isDemo
                   ? "This room is public — invite others to choose an open seat, or return to the lobby for another draft."
-                  : "The clock is paused. Share the invite, then start the draft when your friends are in."
-                : "The board is shared. Only the admin runs live sync and resets; you pick players, pins, and avoids."}
-            </span>
+                  : "The board is shared. Only the admin runs live sync and resets; you pick players, pins, and avoids."}
+              </span>
+            )}
           </>
         )}
       </section>
@@ -1885,179 +1989,191 @@ export function DraftAssistant({
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
+            aria-labelledby="player-detail-title"
           >
             <button
               className="icon-button detail-close"
               onClick={() => setDetailId(null)}
+              aria-label="Close player details"
             >
-              Close
+              ×
             </button>
-            <div className="detail-head">
-              {detailPlayer.imageUrl ? (
-                <Image
-                  className="detail-headshot"
-                  src={detailPlayer.imageUrl}
-                  alt={detailPlayer.name}
-                  width={96}
-                  height={96}
-                  unoptimized
-                />
-              ) : (
-                <div className="detail-headshot placeholder">
-                  {detailPlayer.name
-                    .split(/\s+/)
-                    .slice(0, 2)
-                    .map((part) => part[0])
-                    .join("")}
-                </div>
-              )}
-              <div>
-                <h2>{detailPlayer.name}</h2>
-                <p className="detail-sub">
-                  <span className={`position ${detailPlayer.position.toLowerCase()}`}>
-                    {detailPlayer.position}
-                  </span>
-                  <span>{detailPlayer.teamName || detailPlayer.team}</span>
-                  {detailPlayer.byeWeek ? <span>Bye {detailPlayer.byeWeek}</span> : null}
-                </p>
-                {detailPlayer.injuryStatus &&
-                detailPlayer.injuryStatus !== "HEALTHY" ? (
-                  <p className="detail-injury">{detailPlayer.injuryStatus}</p>
-                ) : null}
-                {detailPick ? (
-                  <p className="detail-drafted">
-                    Drafted · pick {detailPick.overall} (round {detailPick.round}
-                    {hasDraftSeat && detailPick.slot === state.draft.userSlot
-                      ? ", yours"
-                      : ""})
+            <div
+              className="detail-hero"
+              data-team={detailPlayer.team?.toLowerCase()}
+            >
+              <span className="detail-team-mark" aria-hidden="true">
+                {detailPlayer.team}
+              </span>
+              <div className="detail-head">
+                {detailPlayer.imageUrl ? (
+                  <Image
+                    className="detail-headshot"
+                    src={detailPlayer.imageUrl}
+                    alt={detailPlayer.name}
+                    width={220}
+                    height={220}
+                    unoptimized
+                  />
+                ) : (
+                  <div className="detail-headshot placeholder">
+                    {detailPlayer.name
+                      .split(/\s+/)
+                      .slice(0, 2)
+                      .map((part) => part[0])
+                      .join("")}
+                  </div>
+                )}
+                <div className="detail-identity">
+                  <h2 id="player-detail-title">{detailPlayer.name}</h2>
+                  <p className="detail-sub">
+                    <span className={`position ${detailPlayer.position.toLowerCase()}`}>
+                      {detailPlayer.position}
+                    </span>
+                    <span>{detailPlayer.teamName || detailPlayer.team}</span>
+                    {detailPlayer.byeWeek ? <span>Bye {detailPlayer.byeWeek}</span> : null}
                   </p>
+                  {detailPlayer.injuryStatus &&
+                  detailPlayer.injuryStatus !== "HEALTHY" ? (
+                    <p className="detail-injury">{detailPlayer.injuryStatus}</p>
+                  ) : null}
+                  {detailPick ? (
+                    <p className="detail-drafted">
+                      Drafted · pick {detailPick.overall} (round {detailPick.round}
+                      {hasDraftSeat && detailPick.slot === state.draft.userSlot
+                        ? ", yours"
+                        : ""})
+                    </p>
+                  ) : null}
+                  <p className="detail-rank-label">Player rankings</p>
+                  <div className="detail-stats">
+                    <div>
+                      <strong>{detailPlayer.chenRank ?? "—"}</strong>
+                      <span>Chen rank</span>
+                    </div>
+                    <div>
+                      <strong>{detailPlayer.chenTier ? `T${detailPlayer.chenTier}` : "—"}</strong>
+                      <span>Tier</span>
+                    </div>
+                    <div>
+                      <strong>{detailPlayer.adp ?? "—"}</strong>
+                      <span>ADP</span>
+                    </div>
+                    <div>
+                      <strong>
+                        {detailPlayer.percentOwned != null
+                          ? `${detailPlayer.percentOwned}%`
+                          : "—"}
+                      </strong>
+                      <span>Rostered</span>
+                    </div>
+                    {detailPlayer.projectedPoints != null ? (
+                      <div>
+                        <strong>{detailPlayer.projectedPoints}</strong>
+                        <span>Proj pts</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="detail-body">
+              {briefStatus === "loading" ? (
+                <p className="detail-note">Loading 2025 stats and news…</p>
+              ) : null}
+
+              {playerBrief && playerBrief.stats.length > 0 ? (
+                <div className="detail-section">
+                  <div className="detail-why-head">
+                    <strong>{playerBrief.season} season</strong>
+                    <span>Sleeper PPR</span>
+                  </div>
+                  <div className="detail-season">
+                    {playerBrief.stats.map((chip) => (
+                      <div key={chip.label}>
+                        <span>{chip.label}</span>
+                        <strong>{chip.value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {playerBrief && playerBrief.news.length > 0 ? (
+                <div className="detail-section">
+                  <div className="detail-why-head">
+                    <strong>Recent news</strong>
+                    <span>ESPN</span>
+                  </div>
+                  <ul className="detail-news">
+                    {playerBrief.news.map((item) => (
+                      <li key={item.url}>
+                        <a href={item.url} target="_blank" rel="noreferrer">
+                          {item.title}
+                        </a>
+                        {item.published ? (
+                          <small>
+                            {new Date(item.published).toLocaleDateString()}
+                          </small>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : briefStatus === "ready" &&
+                (!playerBrief || playerBrief.news.length === 0) &&
+                (!playerBrief || playerBrief.stats.length === 0) ? (
+                <p className="detail-note">No 2025 stats or news found for this player.</p>
+              ) : null}
+
+              {detailRec ? (
+                <div className="detail-why">
+                  <div className="detail-why-head">
+                    <strong>Why the model likes him</strong>
+                    <span>
+                      Score {detailRec.score.toFixed(1)} · {detailRec.suggestedRosterSlot}
+                    </span>
+                  </div>
+                  <ul>
+                    {detailRec.explanations.slice(0, 4).map((line, index) => (
+                      <li key={index}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="detail-actions">
+                <button
+                  className="secondary"
+                  onClick={() => toggleList("pins", detailPlayer.id)}
+                >
+                  {(state.pins ?? []).includes(detailPlayer.id) ? "Unpin ★" : "Pin ☆"}
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => toggleList("avoids", detailPlayer.id)}
+                >
+                  {avoids.includes(detailPlayer.id) ? "Allow" : "Avoid"}
+                </button>
+                {isMyTurn && !detailPick ? (
+                  <button
+                    className="confirm"
+                    onClick={() => {
+                      void confirm(detailPlayer);
+                      setDetailId(null);
+                    }}
+                  >
+                    Confirm {detailPlayer.name}
+                  </button>
                 ) : null}
               </div>
-            </div>
-
-            <div className="detail-stats">
-              <div>
-                <span>Chen rank</span>
-                <strong>{detailPlayer.chenRank ?? "—"}</strong>
-              </div>
-              <div>
-                <span>Tier</span>
-                <strong>{detailPlayer.chenTier ? `T${detailPlayer.chenTier}` : "—"}</strong>
-              </div>
-              <div>
-                <span>ADP</span>
-                <strong>{detailPlayer.adp ?? "—"}</strong>
-              </div>
-              <div>
-                <span>Rostered</span>
-                <strong>
-                  {detailPlayer.percentOwned != null
-                    ? `${detailPlayer.percentOwned}%`
-                    : "—"}
-                </strong>
-              </div>
-              {detailPlayer.projectedPoints != null ? (
-                <div>
-                  <span>Proj pts</span>
-                  <strong>{detailPlayer.projectedPoints}</strong>
-                </div>
+              {!detailPlayer.imageUrl ? (
+                <p className="detail-note">
+                  Photo &amp; live team/bye fill in from Yahoo once connected.
+                </p>
               ) : null}
             </div>
-
-            {briefStatus === "loading" ? (
-              <p className="detail-note">Loading 2025 stats and news…</p>
-            ) : null}
-
-            {playerBrief && playerBrief.stats.length > 0 ? (
-              <div className="detail-section">
-                <div className="detail-why-head">
-                  <strong>{playerBrief.season} season</strong>
-                  <span>Sleeper PPR</span>
-                </div>
-                <div className="detail-season">
-                  {playerBrief.stats.map((chip) => (
-                    <div key={chip.label}>
-                      <span>{chip.label}</span>
-                      <strong>{chip.value}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {playerBrief && playerBrief.news.length > 0 ? (
-              <div className="detail-section">
-                <div className="detail-why-head">
-                  <strong>Recent news</strong>
-                  <span>ESPN</span>
-                </div>
-                <ul className="detail-news">
-                  {playerBrief.news.map((item) => (
-                    <li key={item.url}>
-                      <a href={item.url} target="_blank" rel="noreferrer">
-                        {item.title}
-                      </a>
-                      {item.published ? (
-                        <small>
-                          {new Date(item.published).toLocaleDateString()}
-                        </small>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : briefStatus === "ready" &&
-              (!playerBrief || playerBrief.news.length === 0) &&
-              (!playerBrief || playerBrief.stats.length === 0) ? (
-              <p className="detail-note">No 2025 stats or news found for this player.</p>
-            ) : null}
-
-            {detailRec ? (
-              <div className="detail-why">
-                <div className="detail-why-head">
-                  <strong>Why the model likes him</strong>
-                  <span>
-                    Score {detailRec.score.toFixed(1)} · {detailRec.suggestedRosterSlot}
-                  </span>
-                </div>
-                <ul>
-                  {detailRec.explanations.slice(0, 4).map((line, index) => (
-                    <li key={index}>{line}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            <div className="detail-actions">
-              <button
-                className="secondary"
-                onClick={() => toggleList("pins", detailPlayer.id)}
-              >
-                {(state.pins ?? []).includes(detailPlayer.id) ? "Unpin ★" : "Pin ☆"}
-              </button>
-              <button
-                className="secondary"
-                onClick={() => toggleList("avoids", detailPlayer.id)}
-              >
-                {avoids.includes(detailPlayer.id) ? "Allow" : "Avoid"}
-              </button>
-              {isMyTurn && !detailPick ? (
-                <button
-                  className="confirm"
-                  onClick={() => {
-                    void confirm(detailPlayer);
-                    setDetailId(null);
-                  }}
-                >
-                  Confirm {detailPlayer.name}
-                </button>
-              ) : null}
-            </div>
-            {!detailPlayer.imageUrl ? (
-              <p className="detail-note">
-                Photo &amp; live team/bye fill in from Yahoo once connected.
-              </p>
-            ) : null}
           </div>
         </div>
       )}
@@ -2471,6 +2587,15 @@ export function DraftAssistant({
                         </span>
                         <b>{pick.player.name}</b>
                         <small>{pick.player.position}</small>
+                        <span
+                          className="board-pick-direction"
+                          aria-hidden="true"
+                          title={`Round ${round} moves ${
+                            round % 2 === 1 ? "left to right" : "right to left"
+                          }`}
+                        >
+                          {round % 2 === 1 ? "→" : "←"}
+                        </span>
                         <PlayerAvatar
                           name={pick.player.name}
                           imageUrl={pick.player.imageUrl}
