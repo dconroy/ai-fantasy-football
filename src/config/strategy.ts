@@ -26,6 +26,7 @@ export const DEFAULT_STRATEGY_WEIGHTS: StrategyWeights = Object.freeze({
   teamConcentration: 2,
   earlySpecialist: 100,
   backupPenalty: 18,
+  lineupCompleteness: 50,
 });
 
 export interface StrategyConfig {

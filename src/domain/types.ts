@@ -72,7 +72,8 @@ export type RecommendationFactor =
   | "byeConcentration"
   | "teamConcentration"
   | "earlySpecialist"
-  | "backupPenalty";
+  | "backupPenalty"
+  | "lineupCompleteness";
 
 export type StrategyWeights = Readonly<Record<RecommendationFactor, number>>;
 

@@ -6,6 +6,7 @@ import {
   createDraftState,
   makeManualPick,
   recommendPlayers,
+  selectionForOverall,
   type DraftState,
   type Player,
 } from "../../src/domain";
@@ -340,6 +341,59 @@ describe("bye concentration thresholds", () => {
   });
 });
 
+function rosterWithoutSpecialists(): Player[] {
+  const skill: Array<[string, Player["position"], number]> = [
+    ["user-qb", "QB", 20],
+    ["user-rb1", "RB", 5],
+    ["user-rb2", "RB", 15],
+    ["user-wr1", "WR", 8],
+    ["user-wr2", "WR", 18],
+    ["user-te", "TE", 25],
+    ["user-flex", "RB", 40],
+    ["user-bn1", "WR", 50],
+    ["user-bn2", "WR", 60],
+    ["user-bn3", "RB", 70],
+    ["user-bn4", "WR", 80],
+    ["user-bn5", "RB", 95],
+    ["user-bn6", "WR", 110],
+  ];
+  return skill.map(([id, position, rank], index) =>
+    candidate(id, position, rank, 4, {
+      team: `U${index + 1}`,
+      byeWeek: 5 + (index % 4),
+    }),
+  );
+}
+
+/** Advance the board to `overall` so the next pick is that selection. */
+function draftUntil(
+  stopAtOverall: number,
+  userPlayers: readonly Player[],
+): DraftState {
+  let state = createDraftState(1);
+  let userIndex = 0;
+  for (let overall = 1; overall < stopAtOverall; overall += 1) {
+    const { slot } = selectionForOverall(overall, state.teamCount);
+    if (slot === 1) {
+      const player = userPlayers[userIndex];
+      if (!player) {
+        throw new Error(`Need a user player for overall ${overall}`);
+      }
+      state = makeManualPick(state, player);
+      userIndex += 1;
+    } else {
+      state = makeManualPick(
+        state,
+        candidate(`opp-${overall}`, "WR", 400 + overall, 12, {
+          team: `O${overall % 30}`,
+          byeWeek: 9,
+        }),
+      );
+    }
+  }
+  return state;
+}
+
 describe("late-draft recommendations", () => {
   it("still returns five options after the user slot has no remaining pick", () => {
     const leftover = Array.from({ length: 20 }, (_, index) =>
@@ -362,6 +416,102 @@ describe("late-draft recommendations", () => {
     const result = recommendPlayers(state, leftover);
     expect(result.recommendations).toHaveLength(5);
     expect(result.picksUntilFollowingSelection).toBeNull();
+  });
+
+  it("prefers a missing kicker over a vanity backup on the last pick", () => {
+    const user = [
+      ...rosterWithoutSpecialists(),
+      candidate("user-def", "DEF", 190, 8, { team: "NYJ", byeWeek: 12 }),
+    ];
+    const lastK = candidate("last-k", "K", 201, 1, { team: "DAL", byeWeek: 10 });
+    const vanityQb = candidate("vanity-qb", "QB", 40, 3, {
+      team: "BAL",
+      byeWeek: 14,
+    });
+    const leftoverRb = candidate("lottery-rb", "RB", 88, 6, {
+      team: "CHI",
+      byeWeek: 7,
+    });
+    const result = recommendPlayers(draftUntil(169, user), [
+      lastK,
+      vanityQb,
+      leftoverRb,
+    ]);
+    expect(result.currentRound).toBe(15);
+    expect(result.recommendations[0].player.id).toBe("last-k");
+    expect(
+      result.recommendations[0].factors.find(
+        (factor) => factor.factor === "lineupCompleteness",
+      )?.value,
+    ).toBe(1);
+    expect(
+      result.recommendations.find((item) => item.player.id === "vanity-qb")
+        ?.factors.find((factor) => factor.factor === "lineupCompleteness")
+        ?.value,
+    ).toBe(0);
+  });
+
+  it("takes a specialist before a leftover skill player when two holes remain at the 14/15 wrap", () => {
+    const lastK = candidate("wrap-k", "K", 205, 1, { team: "DAL", byeWeek: 10 });
+    const lastDef = candidate("wrap-def", "DEF", 188, 2, {
+      team: "HOU",
+      byeWeek: 6,
+    });
+    const vanityQb = candidate("wrap-qb", "QB", 42, 3, {
+      team: "BAL",
+      byeWeek: 14,
+    });
+    const leftoverRb = candidate("wrap-rb", "RB", 86, 6, {
+      team: "CHI",
+      byeWeek: 7,
+    });
+    const result = recommendPlayers(draftUntil(168, rosterWithoutSpecialists()), [
+      lastK,
+      lastDef,
+      vanityQb,
+      leftoverRb,
+    ]);
+    expect(result.currentRound).toBe(14);
+    expect(["wrap-k", "wrap-def"]).toContain(
+      result.recommendations[0].player.id,
+    );
+    expect(
+      result.recommendations
+        .slice(0, 2)
+        .map((item) => item.player.id)
+        .sort(),
+    ).toEqual(["wrap-def", "wrap-k"]);
+  });
+
+  it("takes leftover skill over an extra kicker once the lineup is complete", () => {
+    const user = [
+      ...rosterWithoutSpecialists().slice(0, 12),
+      candidate("user-k", "K", 200, 1, { team: "DAL", byeWeek: 10 }),
+      candidate("user-def", "DEF", 190, 8, { team: "NYJ", byeWeek: 12 }),
+    ];
+    const extraK = candidate("extra-k", "K", 210, 2, {
+      team: "BAL",
+      byeWeek: 14,
+    });
+    const leftoverRb = candidate("best-left-rb", "RB", 88, 6, {
+      team: "CHI",
+      byeWeek: 11,
+    });
+    const vanityQb = candidate("extra-qb", "QB", 48, 4, {
+      team: "GB",
+      byeWeek: 5,
+    });
+    const result = recommendPlayers(draftUntil(169, user), [
+      extraK,
+      leftoverRb,
+      vanityQb,
+    ]);
+    expect(result.recommendations[0].player.id).toBe("best-left-rb");
+    expect(
+      result.recommendations.find((item) => item.player.id === "extra-k")
+        ?.factors.find((factor) => factor.factor === "lineupCompleteness")
+        ?.value,
+    ).toBe(0);
   });
 });
 

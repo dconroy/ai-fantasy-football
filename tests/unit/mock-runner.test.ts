@@ -153,6 +153,7 @@ describe("mock-runner", () => {
     const auto = autoPickIfDue(base, 30_000);
     expect(auto).not.toBeNull();
     expect(auto!.picksBySlot?.[1]).toEqual(["p1"]);
+    expect(auto!.humanSlots).toEqual([1, 3]);
     // A robot fills slot 2, then the draft blocks on the next human (slot 3).
     expect(projectedDraftOrder(auto!)).toHaveLength(2);
     expect(waitingSlot(auto!, 30_000 + base.intervalMs)).toBe(3);

@@ -28,6 +28,24 @@ export type LetterGrade =
   | "D"
   | "F";
 
+/** Missing K/DEF cannot be rescued into A-range by talent or the room curve. */
+export const INCOMPLETE_GRADE_CAP: LetterGrade = "B+";
+const GRADE_ORDER: readonly LetterGrade[] = [
+  "A+",
+  "A",
+  "A-",
+  "B+",
+  "B",
+  "B-",
+  "C+",
+  "C",
+  "C-",
+  "D+",
+  "D",
+  "F",
+];
+const SPECIALIST_HOLES = new Set(["No K", "No DEF"]);
+
 export type ReasonTone = "good" | "bad" | "neutral";
 
 export interface ReportReason {
@@ -63,6 +81,28 @@ export interface DraftBoardReport {
   readonly complete: boolean;
   readonly totalPicks: number;
   readonly teams: readonly TeamReportCard[];
+}
+
+/** Incomplete lineups never receive A / A- / A+. */
+export function limitIncompleteGrade(
+  grade: LetterGrade,
+  holeCount: number,
+): LetterGrade {
+  if (holeCount <= 0) return grade;
+  return GRADE_ORDER.indexOf(grade) < GRADE_ORDER.indexOf(INCOMPLETE_GRADE_CAP)
+    ? INCOMPLETE_GRADE_CAP
+    : grade;
+}
+
+function holePenalties(holes: readonly string[]): { raw: number; curve: number } {
+  let raw = 0;
+  let curve = 0;
+  for (const hole of holes) {
+    const specialist = SPECIALIST_HOLES.has(hole);
+    raw += specialist ? 0.06 : 0.09;
+    curve += specialist ? 0.12 : 0.16;
+  }
+  return { raw, curve };
 }
 
 /** Maps a 0–1 curved score to a letter. Used after the field is ranked. */
@@ -133,6 +173,7 @@ interface TeamMetrics {
   readonly reach: ReportHighlight | null;
   readonly byeAlert: string | null;
   readonly rawScore: number;
+  readonly holeCurvePenalty: number;
   readonly picks: readonly Pick[];
 }
 
@@ -182,6 +223,7 @@ function measureTeam(
 
   const filled = startersFilled(counts);
   const buildScore = clamp(filled / STARTER_SPOTS);
+  const holeHit = holePenalties(holes);
 
   const insights = analyzeDraftRoster(roster, { currentRound });
   const bye = insights.byes.find((group) => group.count >= 3);
@@ -203,7 +245,11 @@ function measureTeam(
   );
 
   const rawScore = clamp(
-    coreScore * 0.5 + valueScore * 0.22 + buildScore * 0.28 - byePenalty,
+    coreScore * 0.5 +
+      valueScore * 0.22 +
+      buildScore * 0.28 -
+      byePenalty -
+      holeHit.raw,
   );
 
   return {
@@ -223,6 +269,7 @@ function measureTeam(
       ? `Bye ${bye.week} logjam · ${bye.count} players`
       : null,
     rawScore,
+    holeCurvePenalty: holeHit.curve,
     picks: roster,
   };
 }
@@ -287,7 +334,7 @@ function buildReasons(
   if (metrics.holes.length > 0) {
     reasons.push({
       tone: "bad",
-      text: `Lineup gap — ${metrics.holes.join(", ")}.`,
+      text: `Lineup gap — ${metrics.holes.join(", ")}. Incomplete teams cannot grade above ${INCOMPLETE_GRADE_CAP}.`,
     });
   } else {
     reasons.push({ tone: "good", text: "Every starting slot is covered." });
@@ -363,12 +410,14 @@ export function buildDraftReport(state: DraftState): DraftBoardReport {
         metrics.length <= 1
           ? 1
           : sortedRaw.indexOf(team.rawScore) / denominator;
-      const curved = clamp(team.rawScore * 0.45 + percentile * 0.55);
+      const curved = clamp(
+        team.rawScore * 0.45 + percentile * 0.55 - team.holeCurvePenalty,
+      );
       const rank = index + 1;
       return {
         slot: team.slot,
         rank,
-        grade: letterGrade(curved),
+        grade: limitIncompleteGrade(letterGrade(curved), team.holes.length),
         score: Math.round(curved * 100) / 100,
         avgChenRank: team.avgChenRank,
         eliteCount: team.eliteCount,

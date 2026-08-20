@@ -10,6 +10,7 @@ import { assignRosterSlot, openStarterSlots, rosterPicks } from "./roster";
 import {
   followingSelectionForSlot,
   nextSelectionForSlot,
+  picksForSlot,
   picksUntilFollowingSelection,
 } from "./snake";
 import type {
@@ -120,12 +121,13 @@ function evaluatePlayer(
   ownRoster: readonly Pick[],
 ): PlayerRecommendation | null {
   const currentOverall = state.picks.length + 1;
-  const next = nextSelectionForSlot(
+  const upcoming = nextSelectionForSlot(
     currentOverall,
     state.userSlot,
     state.rounds,
     state.teamCount,
-  ) ?? {
+  );
+  const next = upcoming ?? {
     overall: currentOverall,
     round:
       Math.floor((Math.max(1, currentOverall) - 1) / state.teamCount) + 1,
@@ -137,6 +139,11 @@ function evaluatePlayer(
     state.rounds,
     state.teamCount,
   );
+  const remainingPicks = picksForSlot(
+    state.userSlot,
+    state.rounds,
+    state.teamCount,
+  ).filter((selection) => selection.overall >= currentOverall).length;
   const suggestedRosterSlot = assignRosterSlot(player, ownRoster, {
     limits: config.rosterLimits,
     overflowBench: true,
@@ -375,6 +382,33 @@ function evaluatePlayer(
         backupPenalty < 0
           ? `A starting ${player.position} is already rostered`
           : `No backup QB/TE penalty`,
+    },
+    weights,
+  );
+
+  const dedicatedHoles = openSlots.filter((slot) => slot !== "FLEX");
+  const lastChance =
+    remainingPicks > 0 &&
+    (remainingPicks === 1 || remainingPicks <= dedicatedHoles.length);
+  const completenessSignal = !lastChance
+    ? 0
+    : directNeed
+      ? 1
+      : remainingPicks === 1 && flexNeed
+        ? 0.55
+        : 0;
+  addFactor(
+    factors,
+    {
+      factor: "lineupCompleteness",
+      value: completenessSignal,
+      explanation: lastChance
+        ? completenessSignal > 0
+          ? remainingPicks === 1
+            ? `Last pick — fill the open ${directNeed ? player.position : "FLEX"} slot`
+            : `Only ${remainingPicks} picks left to fill ${dedicatedHoles.join(" / ")}`
+          : `Last chance — ${player.position} does not complete an open starter`
+        : "Lineup completeness applies on the last pick",
     },
     weights,
   );

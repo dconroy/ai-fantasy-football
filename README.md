@@ -65,7 +65,8 @@ bye-week concentration so you never stack four starters on the same week.
 
 When the board fills up, every team gets **graded on a curve**. Your team is the hero panel —
 letter grade, overall rank, and concrete good/bad reasons (elite anchors, positional depth,
-lineup holes, bye logjams). The leaderboard ranks all twelve and expands to show each roster.
+lineup holes, bye logjams). Incomplete lineups cannot grade above **B+**. The leaderboard
+ranks all twelve and expands to show each roster.
 
 <div align="center">
 <img src="docs/screenshots/report-card.png" alt="Draft report card: your team's graded hero panel plus a ranked A-to-C leaderboard" width="640" />
@@ -153,7 +154,8 @@ Confirm that your use of any third-party data complies with its terms.
 
 Weights live in `src/config/strategy.ts`. Each signal is normalized, multiplied by its
 configured weight, and retained in the result as a factor breakdown. Early kicker/defense and
-unnecessary backup QB/TE penalties are explicit. **The model uses no LLM-generated ranking or
+unnecessary backup QB/TE penalties are explicit. The last pick (and the turn before it when
+two starter holes remain) favors completing K/DEF over a vanity backup. **The model uses no LLM-generated ranking or
 explanation** — every number and reason is derived from the transparent factor engine. The UI
 exposes the most important live adjustments; edit the configuration file for all defaults.
 

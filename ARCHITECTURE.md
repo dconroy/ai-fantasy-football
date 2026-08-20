@@ -133,7 +133,8 @@ calls `ensureFreshBoardPlayers()` (throttled) — see "Rankings pipeline".
 - **`recommendation.ts`** — factor-based scorer. Each candidate accrues weighted,
   explainable signals: `chenRank`, `chenTier`, `tierCliff`, `positionalScarcity`,
   `positionalNeed`, `flexValue`, `rosterBalance`, `turnUrgency`, `adpValue`,
-  `byeConcentration`, `teamConcentration`, `earlySpecialist`, `backupPenalty`.
+  `byeConcentration`, `teamConcentration`, `earlySpecialist`, `backupPenalty`,
+  `lineupCompleteness`.
   Weights come from the user; `excludePlayerIds` drops avoided players.
 - **`lineup.ts`** — weekly start/sit optimizer: fills dedicated then flex slots by
   value, emits concrete swap suggestions and injury/bye alerts.

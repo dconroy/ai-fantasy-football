@@ -58,6 +58,7 @@ export function DemoChatPanel({
   const openRef = useRef(open);
   const initializedRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -68,10 +69,20 @@ export function DemoChatPanel({
   }, [open]);
   useEffect(() => {
     if (!open) return;
-    listRef.current?.scrollTo({
-      top: listRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    const list = listRef.current;
+    const content = contentRef.current;
+    if (!list || !content) return;
+    const stickToBottom = () => {
+      list.scrollTop = list.scrollHeight;
+    };
+    stickToBottom();
+    const frame = requestAnimationFrame(stickToBottom);
+    const observer = new ResizeObserver(stickToBottom);
+    observer.observe(content);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [messages, open]);
 
   useEffect(() => {
@@ -219,37 +230,39 @@ export function DemoChatPanel({
       {open ? (
         <>
           <div className="demo-chat-messages" ref={listRef}>
-            {messages.length === 0 ? (
-              <p className="demo-chat-empty">
-                No messages yet. Talk some trash before the clock starts.
-              </p>
-            ) : (
-              messages.map((message) => (
-                <article
-                  className={
-                    currentSlot === message.authorSlot ? "demo-chat-message mine" : "demo-chat-message"
-                  }
-                  key={message.id}
-                >
-                  <header>
-                    <strong>{message.authorName}</strong>
-                    <span>
-                      Slot {message.authorSlot} ·{" "}
-                      {new Date(message.createdAt).toLocaleTimeString([], {
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </header>
-                  {message.kind === "gif" && message.gifUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- GIPHY returns dynamic media hosts.
-                    <img src={message.gifUrl} alt={message.gifAlt ?? "GIPHY GIF"} />
-                  ) : (
-                    <p>{message.content}</p>
-                  )}
-                </article>
-              ))
-            )}
+            <div className="demo-chat-message-list" ref={contentRef}>
+              {messages.length === 0 ? (
+                <p className="demo-chat-empty">
+                  No messages yet. Talk some trash before the clock starts.
+                </p>
+              ) : (
+                messages.map((message) => (
+                  <article
+                    className={
+                      currentSlot === message.authorSlot ? "demo-chat-message mine" : "demo-chat-message"
+                    }
+                    key={message.id}
+                  >
+                    <header>
+                      <strong>{message.authorName}</strong>
+                      <span>
+                        Slot {message.authorSlot} ·{" "}
+                        {new Date(message.createdAt).toLocaleTimeString([], {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </header>
+                    {message.kind === "gif" && message.gifUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- GIPHY returns dynamic media hosts.
+                      <img src={message.gifUrl} alt={message.gifAlt ?? "GIPHY GIF"} />
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
+                  </article>
+                ))
+              )}
+            </div>
           </div>
 
           {gifOpen && canPost ? (

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDraftReport, letterGrade } from "../../src/domain/draft-report";
+import {
+  buildDraftReport,
+  letterGrade,
+  limitIncompleteGrade,
+} from "../../src/domain/draft-report";
 import type { DraftState, Pick, Player, Position } from "../../src/domain";
 
 function player(
@@ -63,5 +67,48 @@ describe("draft report card", () => {
     expect(slot1?.reach?.name).toBe("ReachWR");
     expect(slot1?.holes).toContain("No DEF");
     expect(slot1?.holes).toContain("1/2 RB");
+  });
+
+  it("caps an incomplete grade at B+ even when talent would otherwise be A-range", () => {
+    expect(limitIncompleteGrade("A-", 1)).toBe("B+");
+    expect(limitIncompleteGrade("A+", 2)).toBe("B+");
+    expect(limitIncompleteGrade("B", 1)).toBe("B");
+    expect(limitIncompleteGrade("A", 0)).toBe("A");
+
+    const eliteCore = [
+      pick(1, player("CMC", "RB", 1)),
+      pick(24, player("Chase", "WR", 2)),
+      pick(25, player("Bijan", "RB", 4)),
+      pick(48, player("JJ", "WR", 6)),
+      pick(49, player("Allen", "QB", 15)),
+      pick(72, player("Kelce", "TE", 20)),
+      pick(73, player("Kyren", "RB", 22)),
+      pick(96, player("Amon", "WR", 28)),
+      pick(97, player("Puka", "WR", 32)),
+      pick(120, player("Gibbs", "RB", 10)),
+      pick(144, player("Ravens", "DEF", 180)),
+    ];
+    const incomplete: DraftState = {
+      teamCount: 12,
+      rounds: 15,
+      userSlot: 1,
+      picks: [...eliteCore, pick(121, player("Dart", "WR", 45))],
+    };
+    const complete: DraftState = {
+      teamCount: 12,
+      rounds: 15,
+      userSlot: 1,
+      picks: [...eliteCore, pick(121, player("Aubrey", "K", 201))],
+    };
+
+    const incompleteTeam = buildDraftReport(incomplete).teams.find(
+      (team) => team.slot === 1,
+    );
+    const completeTeam = buildDraftReport(complete).teams.find(
+      (team) => team.slot === 1,
+    );
+    expect(incompleteTeam?.holes).toContain("No K");
+    expect(["A+", "A", "A-"]).not.toContain(incompleteTeam?.grade);
+    expect(["A+", "A", "A-"]).toContain(completeTeam?.grade);
   });
 });

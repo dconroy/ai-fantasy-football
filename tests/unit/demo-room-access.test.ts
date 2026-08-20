@@ -10,6 +10,7 @@ vi.mock("@/persistence/prisma", () => ({
 
 import { prisma } from "@/persistence/prisma";
 import {
+  demoSeatIsHeld,
   demoSeatMembers,
   validateDemoSeat,
   validateDemoTeamName,
@@ -89,6 +90,15 @@ describe("demo seat leases", () => {
     expect(JSON.stringify(await demoSeatMembers("demo:room-123"))).not.toContain(
       "private-session",
     );
+  });
+
+  it("holds an AFK seat once the draft clock is running", () => {
+    const stale = {
+      seenAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      sessionId: "still-here",
+    };
+    expect(demoSeatIsHeld(stale)).toBe(false);
+    expect(demoSeatIsHeld(stale, { clockRunning: true })).toBe(true);
   });
 
   it("validates and normalizes demo team names", () => {

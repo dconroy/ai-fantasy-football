@@ -32,8 +32,9 @@ const IDLE_ROOM_TTL_MS = 60 * 60 * 1000;
 // A room with no mock config is a half-created/orphaned shell (e.g. recreated
 // from a stale cookie). Give creation a grace window, then recycle it.
 const BROKEN_ROOM_TTL_MS = 2 * 60 * 1000;
-// A demo seat whose client stops polling for this long is considered abandoned:
-// the seat frees up for a new joiner (the mock keeps auto-drafting it meanwhile).
+// Before the clock starts, a demo seat whose client stops polling for this long
+// is abandoned and frees up for a new joiner. After kickoff, missed picks are
+// auto-drafted and the seat stays claimed until they explicitly leave.
 const SEAT_IDLE_MS = 60 * 1000;
 // Don't write a heartbeat more often than this per seat (clients poll ~3s).
 const SEAT_HEARTBEAT_THROTTLE_MS = 8 * 1000;
@@ -87,9 +88,24 @@ async function loadSeatSeen(roomId: string): Promise<SeatLeases> {
   return parseSeatLeases(row?.payload);
 }
 
-function leaseIsActive(lease?: SeatLease, now = Date.now()) {
-  const seenAt = Date.parse(lease?.seenAt ?? "");
-  return Number.isFinite(seenAt) && now - seenAt < SEAT_IDLE_MS;
+/** True while a claimed seat should stay taken. Clock running holds AFK humans. */
+export function demoSeatIsHeld(
+  lease: { readonly seenAt?: string; readonly sessionId?: string } | undefined,
+  options: { readonly now?: number; readonly clockRunning?: boolean } = {},
+): boolean {
+  if (!lease?.sessionId) return false;
+  const seenAt = Date.parse(lease.seenAt ?? "");
+  if (!Number.isFinite(seenAt)) return false;
+  if (options.clockRunning) return true;
+  return (options.now ?? Date.now()) - seenAt < SEAT_IDLE_MS;
+}
+
+function leaseIsActive(
+  lease?: SeatLease,
+  now = Date.now(),
+  clockRunning = false,
+) {
+  return demoSeatIsHeld(lease, { now, clockRunning });
 }
 
 async function claimSeatLease(
@@ -98,6 +114,7 @@ async function claimSeatLease(
   teamCount: number,
   displayName: string,
   requestedSlot?: number | null,
+  clockRunning = false,
 ): Promise<{ slot: number; sessionId: string }> {
   const sessionId = randomUUID();
   for (let guard = 0; guard < 8; guard += 1) {
@@ -105,7 +122,7 @@ async function claimSeatLease(
       where: { id: seatSeenKey(roomId) },
     });
     const leases = parseSeatLeases(row?.payload);
-    const active = activeSeatSet(humanSlots, leases);
+    const active = activeSeatSet(humanSlots, leases, Date.now(), clockRunning);
     const slot =
       requestedSlot ??
       Array.from({ length: teamCount }, (_, index) => index + 1).find(
@@ -145,18 +162,19 @@ async function claimSeatLease(
   throw new Error("That seat changed hands; choose an open seat and try again");
 }
 
-/** Human slots whose heartbeat is still fresh — i.e. actively held right now. */
+/** Human slots currently claimed. After kickoff, stale heartbeats still count. */
 function activeSeatSet(
   humanSlots: readonly number[] | undefined,
   seen: SeatLeases,
   now = Date.now(),
+  clockRunning = false,
 ): Set<number> {
   const active = new Set<number>();
   const leasedSlots = Object.keys(seen)
     .map(Number)
     .filter(Number.isInteger);
   for (const slot of new Set([...(humanSlots ?? []), ...leasedSlots])) {
-    if (leaseIsActive(seen[slot], now)) active.add(slot);
+    if (leaseIsActive(seen[slot], now, clockRunning)) active.add(slot);
   }
   return active;
 }
@@ -169,7 +187,9 @@ export async function validateDemoSeat(
   if (!slot || !sessionId) return false;
   const leases = await loadSeatSeen(roomId);
   const lease = leases[slot];
-  return lease?.sessionId === sessionId && leaseIsActive(lease);
+  if (lease?.sessionId !== sessionId) return false;
+  if (leaseIsActive(lease)) return true;
+  return demoRoomStarted(roomId).catch(() => false);
 }
 
 export async function releaseDemoSeat(
@@ -210,6 +230,7 @@ export async function touchDemoSeat(
   if (!shared.leagueKey) return false;
   const config = await loadMockConfig(shared.leagueKey);
   if (!config || !(config.humanSlots ?? []).includes(slot)) return false;
+  const clockRunning = isDemoClockStarted(config);
   for (let guard = 0; guard < 5; guard += 1) {
     const row = await prisma.syncCheckpoint.findUnique({
       where: { id: seatSeenKey(roomId) },
@@ -217,7 +238,9 @@ export async function touchDemoSeat(
     if (!row) return false;
     const leases = parseSeatLeases(row.payload);
     const lease = leases[slot];
-    if (lease?.sessionId !== sessionId || !leaseIsActive(lease)) return false;
+    if (lease?.sessionId !== sessionId || !leaseIsActive(lease, Date.now(), clockRunning)) {
+      return false;
+    }
     const last = Date.parse(lease.seenAt);
     if (Number.isFinite(last) && Date.now() - last < SEAT_HEARTBEAT_THROTTLE_MS) {
       return true;
@@ -294,10 +317,12 @@ async function recycleStaleRooms() {
         where: { id: seatSeenKey(room.id) },
         select: { payload: true, syncedAt: true },
       });
+      const config = room.leagueKey ? await loadMockConfig(room.leagueKey) : null;
       const activeSeats = activeSeatSet(
         undefined,
         parseSeatLeases(seatRow?.payload),
         now,
+        isDemoClockStarted(config),
       );
       const lastActivity = Math.max(
         room.updatedAt.getTime(),
@@ -376,7 +401,12 @@ export async function findOrCreateOpenDemoRoom(): Promise<{
     const shared = await getOrCreateLeagueDraft(row.id);
     const config = shared.leagueKey ? await loadMockConfig(shared.leagueKey) : null;
     const active = config
-      ? activeSeatSet(config.humanSlots, await loadSeatSeen(row.id))
+      ? activeSeatSet(
+          config.humanSlots,
+          await loadSeatSeen(row.id),
+          Date.now(),
+          isDemoClockStarted(config),
+        )
       : new Set<number>();
     const seats = openSeats(config, shared, active);
     if (seats.broken || !config) continue; // skip orphaned shells entirely
@@ -421,7 +451,12 @@ export async function listDemoRooms(): Promise<DemoRoomSummary[]> {
     const config = await loadMockConfig(shared.leagueKey);
     if (!config) continue;
     const snapshot = await loadMockSnapshot(shared.leagueKey);
-    const active = activeSeatSet(config.humanSlots, await loadSeatSeen(row.id));
+    const active = activeSeatSet(
+      config.humanSlots,
+      await loadSeatSeen(row.id),
+      Date.now(),
+      isDemoClockStarted(config),
+    );
     const totalPicks = config.teamCount * config.rounds;
     const picks = Math.max(shared.picks.length, snapshot?.draftResults.length ?? 0);
     const complete = picks >= totalPicks;
@@ -446,21 +481,30 @@ export async function listDemoRooms(): Promise<DemoRoomSummary[]> {
   return summaries;
 }
 
-/** Seats actively held by a human right now (abandoned seats read as open). */
+/** Seats claimed by a human. After kickoff, AFK managers stay seated and auto-draft. */
 export async function takenSeatsFor(roomId: string): Promise<number[]> {
   const shared = await getOrCreateLeagueDraft(roomId);
   if (!shared.leagueKey) return [];
   const loaded = await loadMockConfig(shared.leagueKey);
   if (!loaded) return [];
-  const active = activeSeatSet(loaded.humanSlots, await loadSeatSeen(roomId));
+  const active = activeSeatSet(
+    loaded.humanSlots,
+    await loadSeatSeen(roomId),
+    Date.now(),
+    isDemoClockStarted(loaded),
+  );
   return [...active].sort((a, b) => a - b);
 }
 
 export async function demoSeatMembers(roomId: string): Promise<MemberSeat[]> {
   const leases = await loadSeatSeen(roomId);
+  const clockRunning = await demoRoomStarted(roomId).catch(() => false);
   return Object.entries(leases)
     .map(([slot, lease]) => ({ slot: Number(slot), lease }))
-    .filter(({ slot, lease }) => Number.isInteger(slot) && leaseIsActive(lease))
+    .filter(
+      ({ slot, lease }) =>
+        Number.isInteger(slot) && leaseIsActive(lease, Date.now(), clockRunning),
+    )
     .sort((left, right) => left.slot - right.slot)
     .map(({ slot, lease }) => {
       const displayName = lease.displayName || `Human · Slot ${slot}`;
@@ -522,6 +566,7 @@ export async function claimDemoSeat(
     shared.teamCount,
     validateDemoTeamName(displayName),
     requestedSlot,
+    isDemoClockStarted(loaded),
   );
   // Re-claiming an abandoned seat: it's already a human slot, so keep its picks
   // and just re-arm the heartbeat. A robot seat gets promoted to human.

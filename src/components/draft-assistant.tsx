@@ -268,7 +268,6 @@ export function DraftAssistant({
   );
   const [takenSlots, setTakenSlots] = useState<number[]>([]);
   const [chosenSeat, setChosenSeat] = useState<number | null>(null);
-  const [demoIdle, setDemoIdle] = useState(false);
   const [demoStarted, setDemoStarted] = useState(!isDemo);
   const [demoTeamName, setDemoTeamName] = useState("");
   const [inviteCopied, setInviteCopied] = useState(false);
@@ -447,9 +446,6 @@ export function DraftAssistant({
 
   useEffect(() => {
     if (!ready) return;
-    // Pause polling once a demo player goes idle: with no /api/draft heartbeat
-    // their seat lapses server-side (~60s) and frees up for someone else.
-    if (isDemo && demoRole === "play" && demoIdle) return;
     const path = draftId
       ? `/api/draft?draftId=${encodeURIComponent(draftId)}`
       : "/api/draft";
@@ -469,69 +465,10 @@ export function DraftAssistant({
         })
         .catch((error) => {
           setNotice(error instanceof Error ? error.message : "Board sync failed");
-          if (isDemo && demoRole === "play" && draftId) {
-            setDemoRole("watch");
-            setDemoIdle(false);
-            void fetch(
-              `/api/demo?room=${encodeURIComponent(draftId)}&join=1`,
-              { cache: "no-store" },
-            )
-              .then((response) => (response.ok ? response.json() : null))
-              .then((payload: DraftPayload | null) => {
-                if (payload?.draft && payload.players && payload.me) {
-                  applyPayload(payload, "Your prior seat expired. Choose an open seat to rejoin.");
-                }
-              })
-              .catch(() => undefined);
-          }
         });
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [ready, draftId, isDemo, demoRole, demoIdle]);
-
-  // Demo inactivity guard: after a few minutes with no interaction, mark the
-  // player idle so their seat is released. Any activity re-arms the timer.
-  useEffect(() => {
-    if (!isDemo || demoRole !== "play") return;
-    const IDLE_LIMIT_MS = 3 * 60 * 1000;
-    let timeout: number;
-    const arm = () => {
-      window.clearTimeout(timeout);
-      timeout = window.setTimeout(() => {
-        setDemoIdle(true);
-        if (!draftId) {
-          setNotice("You went idle — rejoin to keep drafting.");
-          return;
-        }
-        void fetch(
-          `/api/demo?room=${encodeURIComponent(draftId)}&join=1`,
-          { cache: "no-store" },
-        )
-          .then((response) => (response.ok ? response.json() : null))
-          .then((payload: DraftPayload | null) => {
-            if (payload?.draft && payload.players && payload.me) {
-              applyPayload(
-                payload,
-                "You went idle, so your seat was released. Choose an open seat to rejoin.",
-              );
-            }
-          })
-          .catch(() => {
-            setNotice("You went idle — rejoin to keep drafting.");
-          });
-      }, IDLE_LIMIT_MS);
-    };
-    const onActivity = () => {
-      if (!demoIdle) arm();
-    };
-    const events = ["pointerdown", "keydown", "visibilitychange"] as const;
-    for (const event of events) window.addEventListener(event, onActivity);
-    arm();
-    return () => {
-      window.clearTimeout(timeout);
-      for (const event of events) window.removeEventListener(event, onActivity);
-    };
-  }, [isDemo, demoRole, demoIdle, draftId]);
+  }, [ready, draftId, isDemo]);
 
   useEffect(() => {
     fetch("/api/yahoo/status")
@@ -687,6 +624,30 @@ export function DraftAssistant({
     autoPickSeconds !== null &&
     waitingSlotRemote !== null &&
     waitingSlotRemote === current.slot;
+  const autoPickFlushKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !showAutoCountdown ||
+      autoPickSeconds !== 0 ||
+      !autoPickAt ||
+      !leagueKey.trim()
+    ) {
+      return;
+    }
+    if (autoPickFlushKey.current === autoPickAt) return;
+    autoPickFlushKey.current = autoPickAt;
+    const key = leagueKey.trim();
+    void fetch(`/api/yahoo/sync?leagueKey=${encodeURIComponent(key)}`, {
+      cache: "no-store",
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((snapshot: SyncSnapshot | null) => {
+        if (snapshot) reconcileRemote(snapshot);
+      })
+      .catch(() => undefined);
+    // reconcileRemote is defined later in this component and read via closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAutoCountdown, autoPickSeconds, autoPickAt, leagueKey]);
   const available = useMemo(
     () => availablePlayers(state.draft, state.players),
     [state.draft, state.players],
@@ -1223,7 +1184,6 @@ export function DraftAssistant({
       setNotice(payload.error ?? "Could not join the demo");
       return;
     }
-    setDemoIdle(false);
     applyPayload(payload, `Joined as seat ${payload.demo?.slot ?? "?"}`);
   }
 
@@ -1486,14 +1446,6 @@ export function DraftAssistant({
         </div>
       )}
 
-      {isDemo && demoIdle && (
-        <div className="preview-banner" role="status">
-          <span>
-            You went idle, so your seat was released for someone else. Rejoin to
-            take an open seat.
-          </span>
-          <button onClick={() => void joinDemo()}>Rejoin</button>
-        </div>
       )}
 
       {isDemo && !demoStarted && !draftComplete && (
@@ -2553,7 +2505,7 @@ export function DraftAssistant({
       {isDemo && draftId ? (
         <DemoChatPanel
           roomId={draftId}
-          canPost={hasDraftSeat && !demoIdle}
+          canPost={hasDraftSeat}
           currentSlot={hasDraftSeat ? state.draft.userSlot : null}
         />
       ) : null}
