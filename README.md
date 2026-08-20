@@ -2,19 +2,34 @@
 
 # Draft Dojo
 
-**Recalculates your top five after every pick.**
+**An open-source fantasy football draft room that recalculates your top five after every pick.**
 
-Public site: [dojo.football](https://dojo.football).
+- Live app: **[dojo.football](https://dojo.football)**
+- No-signup multiplayer demo: **[dojo.football/demo](https://dojo.football/demo)**
+- Source: **[github.com/dconroy/ai-fantasy-football](https://github.com/dconroy/ai-fantasy-football)**
+- License: **[MIT](LICENSE)**
 
-A local, desktop-first **12-team 0.5-PPR snake draft** command center. It watches the
-draft, does the math after every pick, and tells your league who to take — you still
-make the real selection in Yahoo. It never submits a pick on your behalf.
+Draft Dojo is a browser-based command center for **8–14 team snake drafts**. It follows
+Sleeper or Yahoo, recalculates roster-aware recommendations after every pick, explains its
+scoring, and grades the room when the draft ends. You still make the real selection in your
+league app; Draft Dojo never submits a pick on your behalf.
 
 <img src="docs/screenshots/draft-board.png" alt="The shared AI draft board: on-the-clock banner, live Top-five recommendations, Chen-first rankings, and the team-by-team board" width="900" />
 
 </div>
 
 > Using the app? Read **[USER.md](USER.md)**. Building on it? See **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
+## Why it is open source
+
+Draft recommendations should be inspectable. The ranking adapters, factor weights, roster
+rules, mock opponents, synchronization logic, and report-card curve are all in this
+repository. Fork it to run your own room, swap ranking sources, tune the recommendation
+model, or open an issue when the math looks wrong.
+
+The hosted site at [dojo.football](https://dojo.football) is the fastest way to try it.
+The public demo needs no account: enter a team name, invite friends, claim seats, chat with
+text or GIPHY GIFs, and let robots fill the rest of the room.
 
 The rankings shown throughout this README are Boris Chen's public tiers loaded live and
 cached; player names/headshots are real, but treat any specific board as a **demonstration**
@@ -74,7 +89,13 @@ reproducible so the shared board never reshuffles between syncs.
 
 ## What works
 
-- Pick any draft slot **1–12** and simulate a **15-round** snake draft; drafted players
+- **Public multiplayer demo** — named human teams, clearly labeled robots, invite links,
+  30-second human clocks, room chat with GIPHY, and no signup.
+- **Sleeper and Yahoo connections** — discover drafts/leagues and follow picks without
+  automatic pick submission. Sleeper uses its public read API; Yahoo uses encrypted OAuth.
+- **Multiple ranking sources** — Boris Chen, Sleeper ADP, and eligible FantasyPros ECR,
+  with Standard, Half PPR, and Full PPR scoring.
+- Pick any draft slot in an **8–14 team**, **10–16 round** snake draft; drafted players
   disappear and picks, roster slots, and the board update immediately.
 - Five recommendations with factor-derived explanations, recalculated after every pick.
 - Confirm a recommendation locally, mark any player drafted, undo the latest pick, pin

@@ -5,7 +5,8 @@ import { LiveRooms } from "./live-rooms";
 
 export const metadata: Metadata = {
   title: "Draft Dojo",
-  description: "Recalculates your top five after every pick.",
+  description:
+    "Open-source fantasy football draft rooms with live, roster-aware recommendations.",
 };
 
 const topFive = [
@@ -45,6 +46,13 @@ export default function LandingPage() {
           Draft&nbsp;Dojo
         </span>
         <nav>
+          <a
+            href="https://github.com/dconroy/ai-fantasy-football"
+            target="_blank"
+            rel="noreferrer"
+          >
+            GitHub
+          </a>
           <Link href="/demo">Demo</Link>
           <Link className="landing-nav-cta" href="/login">
             Connect your league
@@ -86,7 +94,7 @@ export default function LandingPage() {
             </Link>
           </div>
           <p className="landing-trust">
-            Sleeper &amp; Yahoo · No signup for the demo
+            Free &amp; open source · MIT licensed · No signup for the demo
           </p>
           <LiveRooms />
         </div>
@@ -141,9 +149,49 @@ export default function LandingPage() {
         ))}
       </section>
 
+      <section className="landing-source">
+        <div>
+          <p className="eyebrow">Open source · MIT licensed</p>
+          <h2>See every recommendation. Change every assumption.</h2>
+          <p>
+            The ranking adapters, draft model, recommendation weights, multiplayer
+            rooms, and report-card logic are public. Audit the math, run your own
+            instance, or help shape the next pick.
+          </p>
+        </div>
+        <div className="landing-source-actions">
+          <a
+            className="landing-primary"
+            href="https://github.com/dconroy/ai-fantasy-football"
+            target="_blank"
+            rel="noreferrer"
+          >
+            View the source
+            <span aria-hidden="true">↗</span>
+          </a>
+          <a
+            className="landing-secondary"
+            href="https://github.com/dconroy/ai-fantasy-football/issues"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open an issue
+          </a>
+        </div>
+      </section>
+
       <footer className="landing-foot">
-        You still make the pick in Sleeper or Yahoo. Not affiliated with Yahoo, Sleeper,
-        or any ranking publisher.
+        <span>
+          You still make the pick in Sleeper or Yahoo. Not affiliated with Yahoo,
+          Sleeper, or any ranking publisher.
+        </span>
+        <a
+          href="https://github.com/dconroy/ai-fantasy-football"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GitHub · MIT
+        </a>
       </footer>
     </main>
   );
