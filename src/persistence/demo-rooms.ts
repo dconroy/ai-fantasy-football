@@ -573,7 +573,10 @@ export async function createDemoRoom(
 }
 
 export function isDemoClockStarted(config: MockDraftConfig | null | undefined): boolean {
-  return Boolean(config?.startedAtIso) && Number.isFinite(Date.parse(config.startedAtIso));
+  const startedAtIso = config?.startedAtIso;
+  return Boolean(
+    startedAtIso && Number.isFinite(Date.parse(startedAtIso)),
+  );
 }
 
 export async function demoRoomStarted(roomId: string): Promise<boolean> {
