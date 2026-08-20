@@ -1,5 +1,9 @@
 import {
+  BYE_STACK_EXCLUDE,
+  BYE_STACK_OK,
+  BYE_STACK_PENALIZE,
   DEFAULT_STRATEGY_CONFIG,
+  DEFAULT_STRATEGY_WEIGHTS,
   type StrategyConfig,
 } from "../config/strategy";
 import { assignRosterSlot, openStarterSlots, rosterPicks } from "./roster";
@@ -11,6 +15,7 @@ import {
 import type {
   DraftState,
   FactorBreakdown,
+  Pick,
   Player,
   PlayerRecommendation,
   Position,
@@ -21,6 +26,47 @@ import type {
 
 const clamp = (value: number, minimum = -1, maximum = 1): number =>
   Math.max(minimum, Math.min(maximum, value));
+
+/** How many already-rostered players share this candidate's bye week. */
+export function sharedByeCount(
+  player: Player,
+  roster: readonly { readonly player: Player }[],
+): number {
+  if (player.byeWeek === undefined) return 0;
+  return roster.filter((pick) => pick.player.byeWeek === player.byeWeek).length;
+}
+
+/**
+ * 0–2 matching byes stay neutral. Three already on that week is a full
+ * penalty; four-plus is an exclusion signal for the Top Five list.
+ */
+export function byeConcentrationValue(sameBye: number): number {
+  return sameBye > BYE_STACK_OK ? -1 : 0;
+}
+
+function byeConcentrationExplanation(player: Player, sameBye: number): string {
+  if (player.byeWeek === undefined) return "Bye week unavailable";
+  if (sameBye >= BYE_STACK_EXCLUDE) {
+    return `${sameBye} rostered players already share bye week ${player.byeWeek} — stacked bye`;
+  }
+  if (sameBye >= BYE_STACK_PENALIZE) {
+    return `${sameBye} rostered players already share bye week ${player.byeWeek} — a fourth would punch a lineup hole`;
+  }
+  return `${sameBye} rostered player(s) already share bye week ${player.byeWeek}`;
+}
+
+function byeConcentrationWeight(
+  sameBye: number,
+  weights: StrategyWeights,
+): number | undefined {
+  if (byeConcentrationValue(sameBye) >= 0 || weights.byeConcentration <= 0) {
+    return undefined;
+  }
+  return Math.max(
+    weights.byeConcentration,
+    DEFAULT_STRATEGY_WEIGHTS.byeConcentration,
+  );
+}
 
 export interface RecommendationOptions {
   readonly topCount?: number;
@@ -34,6 +80,7 @@ interface FactorInput {
   readonly factor: RecommendationFactor;
   readonly value: number;
   readonly explanation: string;
+  readonly weight?: number;
 }
 
 function returnProbability(player: Player, followingOverall: number | null): number | null {
@@ -50,7 +97,7 @@ function addFactor(
   weights: StrategyWeights,
 ): void {
   const value = clamp(input.value);
-  const weight = weights[input.factor];
+  const weight = input.weight ?? weights[input.factor];
   factors.push({
     factor: input.factor,
     value,
@@ -70,6 +117,7 @@ function evaluatePlayer(
   state: DraftState,
   config: StrategyConfig,
   weights: StrategyWeights,
+  ownRoster: readonly Pick[],
 ): PlayerRecommendation | null {
   const currentOverall = state.picks.length + 1;
   const next = nextSelectionForSlot(
@@ -89,7 +137,6 @@ function evaluatePlayer(
     state.rounds,
     state.teamCount,
   );
-  const ownRoster = rosterPicks(state.picks, state.userSlot);
   const suggestedRosterSlot = assignRosterSlot(player, ownRoster, {
     limits: config.rosterLimits,
     overflowBench: true,
@@ -271,18 +318,14 @@ function evaluatePlayer(
     weights,
   );
 
-  const sameBye = ownRoster.filter(
-    (pick) => player.byeWeek !== undefined && pick.player.byeWeek === player.byeWeek,
-  ).length;
+  const sameBye = sharedByeCount(player, ownRoster);
   addFactor(
     factors,
     {
       factor: "byeConcentration",
-      value: sameBye >= 2 ? -clamp((sameBye - 1) / 4, 0, 1) : 0,
-      explanation:
-        player.byeWeek === undefined
-          ? "Bye week unavailable"
-          : `${sameBye} rostered player(s) already share bye week ${player.byeWeek}`,
+      value: byeConcentrationValue(sameBye),
+      weight: byeConcentrationWeight(sameBye, weights),
+      explanation: byeConcentrationExplanation(player, sameBye),
     },
     weights,
   );
@@ -380,8 +423,12 @@ export function recommendPlayers(
       (player.position !== "K" && player.position !== "DEF") ||
       next.round >= config.specialistRound[player.position],
   );
-  const recommendations = eligibleAvailable
-    .map((player) => evaluatePlayer(player, available, state, config, weights))
+  const ownRoster = rosterPicks(state.picks, state.userSlot);
+  const topCount = options.topCount ?? config.topCount;
+  const ranked = eligibleAvailable
+    .map((player) =>
+      evaluatePlayer(player, available, state, config, weights, ownRoster),
+    )
     .filter(
       (recommendation): recommendation is PlayerRecommendation =>
         recommendation !== null,
@@ -392,8 +439,17 @@ export function recommendPlayers(
         (left.player.chenRank ?? Number.MAX_SAFE_INTEGER) -
           (right.player.chenRank ?? Number.MAX_SAFE_INTEGER) ||
         left.player.name.localeCompare(right.player.name),
-    )
-    .slice(0, options.topCount ?? config.topCount);
+    );
+  const unstacked = ranked.filter(
+    (recommendation) =>
+      sharedByeCount(recommendation.player, ownRoster) < BYE_STACK_EXCLUDE,
+  );
+  // Keep 4+ bye stacks off Top Five whenever any other viable player exists.
+  // Best available still lists them — this only filters recommendations.
+  const recommendations = (unstacked.length > 0 ? unstacked : ranked).slice(
+    0,
+    topCount,
+  );
 
   return {
     recommendations,

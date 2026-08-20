@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/persistence/prisma";
 import {
+  CHEN_KICKER,
   CHEN_SCORING,
   DEFAULT_CHEN_SCORING,
+  appendChenSpecialists,
   parseChenCsv,
   parseChenScoring,
   type ChenImport,
@@ -46,7 +48,10 @@ export async function getFreshChenImport(
   }
   if (cachedRow && Date.now() - cachedRow.fetchedAt.getTime() < maxAgeMs) {
     try {
-      return JSON.parse(cachedRow.payload) as ChenImport;
+      const cached = JSON.parse(cachedRow.payload) as ChenImport;
+      // Caches written before kicker merge have no `extras` field — refetch
+      // so weekly-K lands on the board instead of waiting out the TTL.
+      if (cached.extras !== undefined) return cached;
     } catch {
       // fall through to a live fetch
     }
@@ -58,30 +63,57 @@ export async function getFreshChenImport(
   }
 }
 
+async function fetchChenCsv(url: string): Promise<string> {
+  const response = await fetch(url, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(8_000),
+    headers: { Accept: "text/csv,text/plain;q=0.9" },
+  });
+  if (!response.ok) throw new Error(`Source returned HTTP ${response.status}`);
+  return response.text();
+}
+
 export async function fetchChenImport(
   scoring: ChenScoring = DEFAULT_CHEN_SCORING,
 ): Promise<ChenImport> {
   const format = CHEN_SCORING[scoring];
   try {
-    const response = await fetch(format.url, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(8_000),
-      headers: { Accept: "text/csv,text/plain;q=0.9" },
-    });
-    if (!response.ok) throw new Error(`Source returned HTTP ${response.status}`);
-    const csv = await response.text();
-    const imported = {
+    const [allResult, kickerResult] = await Promise.allSettled([
+      fetchChenCsv(format.url),
+      fetchChenCsv(CHEN_KICKER.url),
+    ]);
+    if (allResult.status === "rejected") throw allResult.reason;
+    const csv = allResult.value;
+    let imported: ChenImport = {
       ...parseChenCsv(csv, `Boris Chen · ${format.label}`),
       scoring,
+      extras: [],
     };
     if (imported.players.length === 0) {
       throw new Error("Source contained no usable players");
     }
+    if (kickerResult.status === "fulfilled") {
+      imported = appendChenSpecialists(
+        imported,
+        parseChenCsv(kickerResult.value, "Boris Chen · K"),
+      );
+    } else {
+      imported.warnings = [
+        ...imported.warnings,
+        kickerResult.reason instanceof Error
+          ? `Kicker list unavailable: ${kickerResult.reason.message}`
+          : "Kicker list unavailable",
+      ];
+    }
+    const checksumInput =
+      kickerResult.status === "fulfilled"
+        ? `${csv}\n${kickerResult.value}`
+        : csv;
     await prisma.dataImport.create({
       data: {
         source: format.cacheSource,
         playerCount: imported.players.length,
-        checksum: createHash("sha256").update(csv).digest("hex"),
+        checksum: createHash("sha256").update(checksumInput).digest("hex"),
         payload: JSON.stringify(imported),
       },
     });

@@ -22,7 +22,7 @@ export const DEFAULT_STRATEGY_WEIGHTS: StrategyWeights = Object.freeze({
   rosterBalance: 8,
   turnUrgency: 13,
   adpValue: 7,
-  byeConcentration: 2,
+  byeConcentration: 32,
   teamConcentration: 2,
   earlySpecialist: 100,
   backupPenalty: 18,
@@ -41,6 +41,13 @@ export const DEFAULT_STRATEGY_CONFIG: StrategyConfig = Object.freeze({
   specialistRound: Object.freeze({ K: 13, DEF: 13 }),
   topCount: 5,
 });
+
+/** Rostered players already on this bye: no Top Five penalty. */
+export const BYE_STACK_OK = 2;
+/** Rostered players on this bye: full Top Five penalty so elites drop. */
+export const BYE_STACK_PENALIZE = 3;
+/** Rostered players on this bye: drop from Top Five when anyone else is viable. */
+export const BYE_STACK_EXCLUDE = 4;
 
 /**
  * Mutating draft behavior is deliberately opt-in. UI and sync adapters should

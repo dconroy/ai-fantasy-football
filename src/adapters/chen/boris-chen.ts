@@ -20,6 +20,11 @@ export interface ChenImport {
   source: string;
   warnings: string[];
   scoring?: ChenScoring;
+  /**
+   * Specialist lists already considered for this import (`K`, or empty).
+   * Absent on caches written before kicker merge — those should be refetched.
+   */
+  extras?: readonly string[];
 }
 
 export const CHEN_SCORING = {
@@ -48,6 +53,13 @@ export const CHEN_SCORING = {
 
 export type ChenScoring = keyof typeof CHEN_SCORING;
 export const DEFAULT_CHEN_SCORING: ChenScoring = "half-ppr";
+
+/** Kickers are published as their own file; the ALL lists omit them. */
+export const CHEN_KICKER = {
+  url:
+    process.env.CHEN_K_CSV_URL ??
+    "https://s3-us-west-1.amazonaws.com/fftiers/out/weekly-K.csv",
+} as const;
 
 export function scoringFromSource(source?: string | null): ChenScoring {
   const text = source ?? "";
@@ -141,6 +153,46 @@ export function parseChenCsv(
 
   players.sort((a, b) => a.overallRank - b.overallRank);
   return { players, importedAt, source, warnings };
+}
+
+/**
+ * Append a position-only Chen file (kickers) after the overall list.
+ * Specialist CSVs restart Rank at 1, so overall rank and ADP are offset
+ * past the last ALL player — otherwise Aubrey would sort as overall #1.
+ */
+export function appendChenSpecialists(
+  base: ChenImport,
+  specialist: ChenImport,
+  extraLabel = "K",
+): ChenImport {
+  const seen = new Set(base.players.map((player) => player.sourceId));
+  const baseMax = base.players.reduce(
+    (max, player) => Math.max(max, player.overallRank),
+    0,
+  );
+  const appended = specialist.players
+    .filter((player) => !seen.has(player.sourceId))
+    .map((player) => ({
+      ...player,
+      overallRank: baseMax + player.overallRank,
+      adp: player.adp === undefined ? undefined : baseMax + player.adp,
+    }));
+  if (appended.length === 0) {
+    return {
+      ...base,
+      warnings: [...base.warnings, ...specialist.warnings],
+      extras: [...(base.extras ?? [])],
+    };
+  }
+  return {
+    ...base,
+    players: [...base.players, ...appended].sort(
+      (left, right) => left.overallRank - right.overallRank,
+    ),
+    source: `${base.source} + ${extraLabel}`,
+    warnings: [...base.warnings, ...specialist.warnings],
+    extras: [...(base.extras ?? []), extraLabel],
+  };
 }
 
 export interface ChenDataAdapter {

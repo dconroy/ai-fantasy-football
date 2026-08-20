@@ -2225,6 +2225,7 @@ export function DraftAssistant({
                     {item.player.position}
                   </span>
                   <span>T{item.player.chenTier ?? "—"}</span>
+                  <span>Bye {item.player.byeWeek ?? "—"}</span>
                 </div>
                 <p>{item.explanations[0] ?? "Best calculated value available"}</p>
                 <small>Score {item.score.toFixed(1)} · {item.suggestedRosterSlot}</small>

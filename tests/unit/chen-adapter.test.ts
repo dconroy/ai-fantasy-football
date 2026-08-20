@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CHEN_SCORING,
+  appendChenSpecialists,
   parseChenCsv,
   parseChenScoring,
   scoringFromSource,
@@ -46,6 +47,69 @@ describe("Boris Chen CSV adapter", () => {
     );
     expect(result.players[0].position).toBe("DEF");
     expect(result.warnings).toHaveLength(1);
+  });
+
+  it("appends kickers after the overall list without stealing top ranks", () => {
+    const skill = parseChenCsv(
+      [
+        "Rank,Player.Name,Tier,Position,Avg.Rank",
+        "1,Jahmyr Gibbs,1,RB,1.7",
+        "200,Jaylin Noel,24,WR,198.4",
+      ].join("\n"),
+      "Boris Chen · 0.5 PPR",
+    );
+    const kickers = parseChenCsv(
+      [
+        "Rank,Player.Name,Position,Avg.Rank,Tier",
+        "1,Brandon Aubrey,K,1.17,1",
+        "2,Cameron Dicker,K,3.67,1",
+      ].join("\n"),
+      "Boris Chen · K",
+    );
+    const merged = appendChenSpecialists({ ...skill, extras: [] }, kickers);
+
+    expect(merged.players).toHaveLength(4);
+    expect(merged.source).toBe("Boris Chen · 0.5 PPR + K");
+    expect(merged.extras).toEqual(["K"]);
+    expect(merged.players[0]).toMatchObject({
+      name: "Jahmyr Gibbs",
+      overallRank: 1,
+    });
+    expect(merged.players.map((player) => player.name)).toEqual([
+      "Jahmyr Gibbs",
+      "Jaylin Noel",
+      "Brandon Aubrey",
+      "Cameron Dicker",
+    ]);
+    expect(merged.players[2]).toMatchObject({
+      name: "Brandon Aubrey",
+      position: "K",
+      overallRank: 201,
+      positionRank: 1,
+      adp: 201.17,
+      tier: 1,
+    });
+    expect(merged.players[3]).toMatchObject({
+      name: "Cameron Dicker",
+      overallRank: 202,
+      adp: 203.67,
+    });
+  });
+
+  it("does not duplicate a kicker already in the overall file", () => {
+    const skill = parseChenCsv(
+      "Rank,Player.Name,Tier,Position\n180,Brandon Aubrey,12,K",
+      "Boris Chen · 0.5 PPR",
+    );
+    const kickers = parseChenCsv(
+      "Rank,Player.Name,Position,Tier\n1,Brandon Aubrey,K,1",
+      "Boris Chen · K",
+    );
+    const merged = appendChenSpecialists({ ...skill, extras: [] }, kickers);
+    expect(merged.players).toHaveLength(1);
+    expect(merged.players[0].overallRank).toBe(180);
+    expect(merged.extras).toEqual([]);
+    expect(merged.source).toBe("Boris Chen · 0.5 PPR");
   });
 });
 
