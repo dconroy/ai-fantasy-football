@@ -8,6 +8,7 @@ import {
   recordUserPick,
 } from "./mock-runner";
 import type { YahooSyncSnapshot } from "./yahoo-api";
+import { humanTeamFallback, rpBotTeamName } from "@/domain/demo-labels";
 
 function humanSlotSet(config: MockDraftConfig): Set<number> {
   if (config.humanSlots && config.humanSlots.length > 0) {
@@ -207,8 +208,8 @@ export async function loadMockSnapshot(
     teams: Array.from({ length: config.teamCount }, (_, index) => ({
       teamKey: `mock.t.${index + 1}`,
       name: humanSlots.has(index + 1)
-        ? `Manager (slot ${index + 1})`
-        : `Team ${index + 1}`,
+        ? humanTeamFallback()
+        : rpBotTeamName(index + 1),
       draftSlot: index + 1,
     })),
     draftResults: picks,

@@ -34,6 +34,13 @@ import { formatStamp } from "@/lib/build-info";
 import { DraftReportCard } from "@/components/draft-report-card";
 import { DemoChatPanel } from "@/components/demo-chat-panel";
 import { buildDraftReport } from "@/domain/draft-report";
+import {
+  demoSeatKind,
+  demoSeatKindLabel,
+  humanTeamFallback,
+  rpBotTeamName,
+  type DemoSeatKind,
+} from "@/domain/demo-labels";
 
 interface RemoteDraftPick {
   pick: number;
@@ -746,15 +753,23 @@ export function DraftAssistant({
 
   function teamLabel(slot: number) {
     if (hasDraftSeat && slot === state.draft.userSlot) {
-      return me?.teamName || "COBRA KAI";
+      return me?.teamName || humanTeamFallback();
     }
     const occupant = members.find((member) => member.draftSlot === slot);
     if (occupant) return occupant.teamName || occupant.displayName;
-    return isDemo ? `Robot · ${slot}` : `T${slot}`;
+    return isDemo ? rpBotTeamName(slot) : `T${slot}`;
   }
 
   function isHumanDemoSlot(slot: number) {
     return isDemo && members.some((member) => member.draftSlot === slot);
+  }
+
+  function kindForDemoSlot(slot: number): DemoSeatKind {
+    return demoSeatKind(
+      slot,
+      members.flatMap((member) => (member.draftSlot ? [member.draftSlot] : [])),
+      { started: demoStarted, complete: draftComplete },
+    );
   }
 
   function reconcileRemote(snapshot: SyncSnapshot) {
@@ -1184,7 +1199,7 @@ export function DraftAssistant({
       setNotice(payload.error ?? "Could not join the demo");
       return;
     }
-    applyPayload(payload, `Joined as seat ${payload.demo?.slot ?? "?"}`);
+    applyPayload(payload, `Joined as ${demoTeamName.trim()}`);
   }
 
   const selectedPlayer =
@@ -1347,43 +1362,6 @@ export function DraftAssistant({
           {!isDemo ? <Link className="status" href="/weekly">Weekly HQ</Link> : (
             <Link className="status" href="/">Home</Link>
           )}
-          {isDemo && demoRole !== "play" ? (
-            (() => {
-              const openSeats = Array.from(
-                { length: state.draft.teamCount },
-                (_, index) => index + 1,
-              ).filter((seat) => !takenSlots.includes(seat));
-              if (openSeats.length === 0) {
-                return <span className="status">Room is full</span>;
-              }
-              return (
-                <span className="demo-join">
-                  <select
-                    className="demo-seat-select"
-                    value={chosenSeat ?? ""}
-                    onChange={(event) =>
-                      setChosenSeat(
-                        event.target.value ? Number(event.target.value) : null,
-                      )
-                    }
-                  >
-                    <option value="">Pick a seat…</option>
-                    {openSeats.map((seat) => (
-                      <option key={seat} value={seat}>
-                        Seat {seat}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="live-button"
-                    onClick={() => void joinDemo()}
-                  >
-                    {chosenSeat ? `Join as seat ${chosenSeat}` : "Join next open seat"}
-                  </button>
-                </span>
-              );
-            })()
-          ) : null}
           <span className={`status ${state.mode === "mock" ? "simulation" : "live"}`}>
             ●{" "}
             {state.mode === "mock"
@@ -1444,8 +1422,6 @@ export function DraftAssistant({
           </span>
           <button onClick={() => setPreviewMember(false)}>Back to admin view</button>
         </div>
-      )}
-
       )}
 
       {isDemo && !demoStarted && !draftComplete && (

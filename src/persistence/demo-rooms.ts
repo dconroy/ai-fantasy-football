@@ -507,7 +507,7 @@ export async function demoSeatMembers(roomId: string): Promise<MemberSeat[]> {
     )
     .sort((left, right) => left.slot - right.slot)
     .map(({ slot, lease }) => {
-      const displayName = lease.displayName || `Human · Slot ${slot}`;
+      const displayName = lease.displayName || "Human";
       return {
         id: `demo:${roomId}:${slot}`,
         displayName,

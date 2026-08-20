@@ -24,7 +24,7 @@ export async function boardPayload(
     const member = members.find((candidate) => candidate.draftSlot === slot);
     const displayName =
       demo.role === "play"
-        ? member?.displayName ?? `Human · Slot ${slot}`
+        ? member?.displayName ?? "Human"
         : "Spectator";
     return {
       ...shared,

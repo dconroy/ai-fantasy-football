@@ -25,7 +25,7 @@ function demoMe(
   displayName?: string,
 ) {
   const name =
-    role === "play" ? displayName || `Human · Slot ${slot}` : "Spectator";
+    role === "play" ? displayName || "Human" : "Spectator";
   return {
     id: `demo:${roomId}:${role === "play" ? slot : "spectator"}`,
     displayName: name,

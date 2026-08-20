@@ -1,0 +1,17 @@
+---
+description: Lint or build after app/TSX edits — unit tests do not compile Next.js
+alwaysApply: true
+---
+
+# Verify the app compiles
+
+`vitest` only runs `tests/`. It will not parse `src/components`, `src/app`, or other TSX.
+A stray `)}` can pass every unit test and fail Vercel on `next build`.
+
+After changing `.tsx`, `.ts` under `src/app` or `src/components`, or CSS imported by the app:
+
+1. Run `npm run lint` before you treat the work as done.
+2. If the change is deploy-sensitive (layout, JSX wrappers, next config), also run `npm run build`.
+3. Do not rely on `npm test` alone as a pipeline check.
+
+A syntax error in JSX is a failed compile, not a failed test.
