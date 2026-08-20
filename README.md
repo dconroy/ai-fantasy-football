@@ -170,7 +170,7 @@ independent:
 |---|---|
 | **Boris Chen** | Default. Public CSVs, no key. |
 | **Sleeper ADP** | Market ADP, no key. |
-| **FantasyPros ECR** | Hidden until `FANTASYPROS_API_KEY` is set. Request an API key from FantasyPros, add it to `.env` (and to your Vercel env vars, then redeploy). |
+| **FantasyPros ECR** | Requires a key entitled to the full rankings API. Public/free keys return only 10 players per position and cannot populate a complete board. Add an eligible `FANTASYPROS_API_KEY` to `.env` and Vercel, then redeploy. |
 
 ## Public demo
 

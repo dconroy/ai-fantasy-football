@@ -24,14 +24,28 @@ export async function fetchFantasyProsImport(
   if (!key) return null;
   const cacheSource = `fantasypros-${scoring}`;
   const year = new Date().getUTCFullYear();
-  const url = `https://api.fantasypros.com/public/v2/json/nfl/${year}/consensus-rankings?position=ALL&scoring=${SCORING[scoring]}`;
+  const url = `https://api.fantasypros.com/v2/json/nfl/${year}/consensus-rankings?position=ALL&scoring=${SCORING[scoring]}`;
   try {
     const response = await fetch(url, {
       cache: "no-store",
-      headers: { "x-api-key": key },
+      headers: { "x-api-key": key, Accept: "application/json" },
       signal: AbortSignal.timeout(8000),
     });
-    if (!response.ok) throw new Error(`FantasyPros returned ${response.status}`);
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        "FantasyPros rejected this key for the full rankings API. Public/free keys are limited to 10 players per position and cannot build a complete draft board",
+      );
+    }
+    if (!response.ok) {
+      const error = (await response.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      throw new Error(
+        error?.message
+          ? `FantasyPros: ${error.message}`
+          : `FantasyPros returned ${response.status}`,
+      );
+    }
     const body = (await response.json()) as { players?: FpPlayer[] };
     const players: ChenPlayerRecord[] = [];
     const positionCounts = new Map<string, number>();
@@ -72,12 +86,12 @@ export async function fetchFantasyProsImport(
       })
       .catch(() => undefined);
     return imported;
-  } catch {
+  } catch (error) {
     const cached = await prisma.dataImport.findFirst({
       where: { source: cacheSource },
       orderBy: { fetchedAt: "desc" },
     });
-    if (!cached) return null;
+    if (!cached) throw error;
     return JSON.parse(cached.payload) as ChenImport;
   }
 }

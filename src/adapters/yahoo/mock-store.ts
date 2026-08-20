@@ -1,5 +1,5 @@
 import { prisma } from "@/persistence/prisma";
-import type { MockDraftConfig } from "./mock-runner";
+import type { MockDraftConfig, MockPlayerSeed } from "./mock-runner";
 import {
   autoPickDeadline,
   autoPickIfDue,
@@ -49,6 +49,35 @@ export async function saveMockConfig(config: MockDraftConfig): Promise<void> {
       payload: JSON.stringify(config),
     },
   });
+}
+
+export async function replaceMockPlayersBeforeDraft(
+  leagueKey: string,
+  players: readonly MockPlayerSeed[],
+): Promise<boolean> {
+  for (let guard = 0; guard < 8; guard += 1) {
+    const row = await prisma.syncCheckpoint.findUnique({
+      where: { id: checkpointId(leagueKey) },
+    });
+    if (!row?.payload) throw new Error(`No mock draft running for ${leagueKey}`);
+    let config: MockDraftConfig;
+    try {
+      config = JSON.parse(row.payload) as MockDraftConfig;
+    } catch {
+      throw new Error(`No mock draft running for ${leagueKey}`);
+    }
+    if (mockDraftResults(config).picks.length > 0) return false;
+    const result = await prisma.syncCheckpoint.updateMany({
+      where: { id: row.id, sequence: row.sequence },
+      data: {
+        sequence: row.sequence + 1,
+        syncedAt: new Date(),
+        payload: JSON.stringify({ ...config, players }),
+      },
+    });
+    if (result.count === 1) return true;
+  }
+  throw new Error("That room changed while updating rankings; try again");
 }
 
 export async function addMockHumanSlot(

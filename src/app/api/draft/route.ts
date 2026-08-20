@@ -16,6 +16,7 @@ import { boardPayload } from "@/persistence/draft-payload";
 import { touchDemoSeat } from "@/persistence/demo-rooms";
 import type { ChenImport } from "@/adapters/chen/boris-chen";
 import type { DraftState, Player } from "@/domain";
+import { replaceMockPlayersBeforeDraft } from "@/adapters/yahoo/mock-store";
 
 export const runtime = "nodejs";
 
@@ -60,9 +61,9 @@ export async function PUT(request: Request) {
     } | null;
 
     if (demo) {
-      if (body?.action !== "picks") {
+      if (body?.action !== "picks" && body?.action !== "chen") {
         return NextResponse.json(
-          { error: "Demo rooms only accept synchronized mock picks" },
+          { error: "That change is not available in demo rooms" },
           { status: 403 },
         );
       }
@@ -76,6 +77,28 @@ export async function PUT(request: Request) {
         draftId,
       );
     } else if (body?.action === "chen" && body.chen?.players?.length) {
+      if (demo) {
+        const current = await getOrCreateLeagueDraft(draftId);
+        if (!current.leagueKey) {
+          throw new ConflictError("This demo room is missing its mock draft");
+        }
+        const changed = await replaceMockPlayersBeforeDraft(
+          current.leagueKey,
+          body.chen.players.map((player) => ({
+            id: player.sourceId,
+            name: player.name,
+            position: player.position,
+            team: player.team ?? "FA",
+            chenRank: player.overallRank,
+            adp: player.adp,
+          })),
+        );
+        if (!changed) {
+          throw new ConflictError(
+            "Rankings cannot be changed after the demo draft begins",
+          );
+        }
+      }
       await applyChenImport(body.chen, draftId);
     } else if (body?.action === "players" && Array.isArray(body.players)) {
       await replacePlayers(

@@ -608,6 +608,7 @@ export function DraftAssistant({
   }, [ready, isDemo, state, state.draft.userSlot, state.pins, state.avoids, state.weights, dark, me]);
 
   const current = selectionForOverall(state.draft.picks.length + 1);
+  const hasDraftSeat = !isDemo || demoRole === "play";
   const nextMine = nextSelectionForSlot(
     current.overall,
     state.draft.userSlot,
@@ -699,7 +700,13 @@ export function DraftAssistant({
       }),
     [state.draft, state.players, state.weights, avoids],
   );
-  const myRoster = rosterPicks(state.draft.picks, state.draft.userSlot);
+  const myRoster = useMemo(
+    () =>
+      hasDraftSeat
+        ? rosterPicks(state.draft.picks, state.draft.userSlot)
+        : [],
+    [hasDraftSeat, state.draft.picks, state.draft.userSlot],
+  );
   const insights = useMemo(
     () =>
       analyzeDraftRoster(myRoster, {
@@ -766,7 +773,9 @@ export function DraftAssistant({
   }
 
   function teamLabel(slot: number) {
-    if (slot === state.draft.userSlot) return me?.teamName || "COBRA KAI";
+    if (hasDraftSeat && slot === state.draft.userSlot) {
+      return me?.teamName || "COBRA KAI";
+    }
     const occupant = members.find((member) => member.draftSlot === slot);
     return occupant?.teamName || occupant?.displayName || `T${slot}`;
   }
@@ -1481,25 +1490,33 @@ export function DraftAssistant({
       <section className={`control-strip ${isMyTurn ? "on-clock" : ""}`}>
         <label>
           Draft slot
-          <select
-            value={state.draft.userSlot}
-            disabled={isDemo}
-            onChange={(event) =>
-              setState((previous) => ({
-                ...previous,
-                draft: { ...previous.draft, userSlot: Number(event.target.value) },
-              }))
-            }
-          >
-            {Array.from({ length: state.draft.teamCount }, (_, index) => (
-              <option key={index + 1}>{index + 1}</option>
-            ))}
-          </select>
+          {!hasDraftSeat ? (
+            <select value="" disabled>
+              <option value="">Not seated</option>
+            </select>
+          ) : (
+            <select
+              value={state.draft.userSlot}
+              disabled={isDemo}
+              onChange={(event) =>
+                setState((previous) => ({
+                  ...previous,
+                  draft: { ...previous.draft, userSlot: Number(event.target.value) },
+                }))
+              }
+            >
+              {Array.from({ length: state.draft.teamCount }, (_, index) => (
+                <option key={index + 1}>{index + 1}</option>
+              ))}
+            </select>
+          )}
         </label>
         <div className="turn-indicator">
           <strong>
             {draftComplete
               ? "Draft complete"
+              : !hasDraftSeat
+                ? "Spectating — choose a seat above"
               : isDemo && !demoStarted
                 ? "Waiting to start"
                 : isMyTurn
@@ -1622,7 +1639,7 @@ export function DraftAssistant({
       {reportOpen && draftReport && (
         <DraftReportCard
           report={draftReport}
-          userSlot={state.draft.userSlot}
+          userSlot={hasDraftSeat ? state.draft.userSlot : 0}
           teamLabel={teamLabel}
           onClose={() => setReportOpen(false)}
         />
@@ -1895,7 +1912,9 @@ export function DraftAssistant({
                 {detailPick ? (
                   <p className="detail-drafted">
                     Drafted · pick {detailPick.overall} (round {detailPick.round}
-                    {detailPick.slot === state.draft.userSlot ? ", yours" : ""})
+                    {hasDraftSeat && detailPick.slot === state.draft.userSlot
+                      ? ", yours"
+                      : ""})
                   </p>
                 ) : null}
               </div>
@@ -2036,7 +2055,9 @@ export function DraftAssistant({
               <h2>{recoTab === "insights" ? "Insights" : "Top five"}</h2>
             </div>
             <span>
-              {recoTab === "insights"
+              {!hasDraftSeat
+                ? "choose a seat"
+                : recoTab === "insights"
                 ? insightFlags
                   ? `${insightFlags} alert${insightFlags === 1 ? "" : "s"}`
                   : "no flags"
@@ -2047,6 +2068,12 @@ export function DraftAssistant({
                     : `${recommendation.picksUntilFollowingSelection} picks until your next turn`}
             </span>
           </div>
+          {!hasDraftSeat ? (
+            <p className="insight-empty">
+              Choose an open seat to get roster-specific recommendations and insights.
+            </p>
+          ) : (
+          <>
           <div className="reco-tabs" role="tablist">
             <button
               type="button"
@@ -2156,6 +2183,8 @@ export function DraftAssistant({
           <p className="safety-note">
             Picks are recorded on this board only — make the real pick in the Yahoo app.
           </p>
+          </>
+          )}
         </aside>
 
         <section className="panel available-panel">
@@ -2393,7 +2422,9 @@ export function DraftAssistant({
         >
           {Array.from({ length: state.draft.teamCount }, (_, index) => (
             <div
-              className={`board-head ${index + 1 === state.draft.userSlot ? "mine" : ""}`}
+              className={`board-head ${
+                hasDraftSeat && index + 1 === state.draft.userSlot ? "mine" : ""
+              }`}
               key={`head-${index + 1}`}
             >
               {teamLabel(index + 1)}
@@ -2410,7 +2441,9 @@ export function DraftAssistant({
                 );
                 return (
                   <div
-                    className={`board-cell ${slot === state.draft.userSlot ? "mine" : ""}`}
+                    className={`board-cell ${
+                      hasDraftSeat && slot === state.draft.userSlot ? "mine" : ""
+                    }`}
                     key={`${round}-${slot}`}
                   >
                     {pick ? (

@@ -64,7 +64,7 @@ export async function GET(request: Request) {
         const shared = await getOrCreateLeagueDraft(existing.roomId);
         return NextResponse.json({
           ...shared,
-          draft: draftStateFor(shared, existing.slot ?? 1),
+          draft: draftStateFor(shared, existing.slot ?? 0),
           members: [],
           me: demoMe(existing.slot, existing.role),
           demo: {
