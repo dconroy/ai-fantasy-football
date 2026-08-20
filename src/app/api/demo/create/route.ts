@@ -9,6 +9,7 @@ import { draftStateFor } from "@/persistence/league-draft";
 import {
   createDemoRoom,
   demoClientState,
+  demoSeatMembers,
   validateDemoRoomInput,
 } from "@/persistence/demo-rooms";
 
@@ -21,6 +22,7 @@ export async function POST(request: NextRequest) {
       teamCount?: unknown;
       rounds?: unknown;
       slot?: unknown;
+      displayName?: unknown;
     } | null;
     if (!body) {
       return NextResponse.json(
@@ -39,13 +41,13 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({
       ...shared,
       draft: draftStateFor(shared, slot),
-      members: [],
+      members: await demoSeatMembers(shared.id),
       me: {
-        id: "demo",
-        displayName: `Seat ${slot}`,
+        id: `demo:${shared.id}:${slot}`,
+        displayName: settings.displayName,
         role: "member",
         draftSlot: slot,
-        teamName: `Seat ${slot}`,
+        teamName: settings.displayName,
         pins: [],
         avoids: [],
         weights: DEFAULT_STRATEGY_WEIGHTS,

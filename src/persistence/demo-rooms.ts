@@ -4,6 +4,7 @@ import {
   getOrCreateLeagueDraft,
   saveSharedDraft,
   seedPlayersForScoring,
+  type MemberSeat,
   type SharedDraft,
 } from "@/persistence/league-draft";
 import {
@@ -47,6 +48,7 @@ function seatSeenKey(roomId: string) {
 interface SeatLease {
   readonly seenAt: string;
   readonly sessionId: string;
+  readonly displayName: string;
 }
 
 type SeatLeases = Record<number, SeatLease>;
@@ -56,16 +58,18 @@ function parseSeatLeases(payload?: string | null): SeatLeases {
   try {
     const parsed = JSON.parse(payload) as Record<
       number,
-      string | { seenAt?: unknown; sessionId?: unknown }
+      string | { seenAt?: unknown; sessionId?: unknown; displayName?: unknown }
     >;
     return Object.fromEntries(
       Object.entries(parsed).map(([slot, value]) => [
         slot,
         typeof value === "string"
-          ? { seenAt: value, sessionId: "" }
+          ? { seenAt: value, sessionId: "", displayName: "" }
           : {
               seenAt: typeof value.seenAt === "string" ? value.seenAt : "",
               sessionId: typeof value.sessionId === "string" ? value.sessionId : "",
+              displayName:
+                typeof value.displayName === "string" ? value.displayName : "",
             },
       ]),
     ) as SeatLeases;
@@ -90,6 +94,7 @@ async function claimSeatLease(
   roomId: string,
   humanSlots: readonly number[],
   teamCount: number,
+  displayName: string,
   requestedSlot?: number | null,
 ): Promise<{ slot: number; sessionId: string }> {
   const sessionId = randomUUID();
@@ -108,7 +113,7 @@ async function claimSeatLease(
     if (active.has(slot)) throw new Error(`Seat ${slot} is already taken`);
     const next = {
       ...leases,
-      [slot]: { seenAt: new Date().toISOString(), sessionId },
+      [slot]: { seenAt: new Date().toISOString(), sessionId, displayName },
     };
     if (!row) {
       try {
@@ -426,8 +431,39 @@ export async function takenSeatsFor(roomId: string): Promise<number[]> {
   return [...active].sort((a, b) => a - b);
 }
 
+export async function demoSeatMembers(roomId: string): Promise<MemberSeat[]> {
+  const leases = await loadSeatSeen(roomId);
+  return Object.entries(leases)
+    .map(([slot, lease]) => ({ slot: Number(slot), lease }))
+    .filter(({ slot, lease }) => Number.isInteger(slot) && leaseIsActive(lease))
+    .sort((left, right) => left.slot - right.slot)
+    .map(({ slot, lease }) => {
+      const displayName = lease.displayName || `Human · Slot ${slot}`;
+      return {
+        id: `demo:${roomId}:${slot}`,
+        displayName,
+        draftSlot: slot,
+        teamName: displayName,
+        role: "member",
+        status: "active",
+        lastSeenAt: lease.seenAt || null,
+      };
+    });
+}
+
+export function validateDemoTeamName(value: unknown): string {
+  const name =
+    typeof value === "string"
+      ? value.replace(/[\u0000-\u001f\u007f]/g, "").trim().replace(/\s+/g, " ")
+      : "";
+  if (name.length < 2) throw new Error("Team name must be at least 2 characters");
+  if (name.length > 32) throw new Error("Team name must be 32 characters or fewer");
+  return name;
+}
+
 export async function claimDemoSeat(
   roomId: string,
+  displayName: string,
   requestedSlot?: number | null,
 ): Promise<{
   shared: SharedDraft;
@@ -459,6 +495,7 @@ export async function claimDemoSeat(
     roomId,
     loaded.humanSlots ?? [],
     shared.teamCount,
+    validateDemoTeamName(displayName),
     requestedSlot,
   );
   // Re-claiming an abandoned seat: it's already a human slot, so keep its picks
@@ -480,6 +517,7 @@ export interface CreateDemoRoomInput {
   readonly teamCount: number;
   readonly rounds: number;
   readonly slot: number;
+  readonly displayName: string;
 }
 
 export function validateDemoRoomInput(input: {
@@ -487,6 +525,7 @@ export function validateDemoRoomInput(input: {
   teamCount?: unknown;
   rounds?: unknown;
   slot?: unknown;
+  displayName?: unknown;
 }): CreateDemoRoomInput {
   const scoringRaw = typeof input.scoring === "string" ? input.scoring : "";
   if (!["standard", "half-ppr", "ppr"].includes(scoringRaw)) {
@@ -496,6 +535,7 @@ export function validateDemoRoomInput(input: {
   const teamCount = Number(input.teamCount);
   const rounds = Number(input.rounds);
   const slot = Number(input.slot);
+  const displayName = validateDemoTeamName(input.displayName);
   if (!Number.isInteger(teamCount) || teamCount < 8 || teamCount > 14) {
     throw new Error("Roster count must be between 8 and 14");
   }
@@ -505,7 +545,7 @@ export function validateDemoRoomInput(input: {
   if (!Number.isInteger(slot) || slot < 1 || slot > teamCount) {
     throw new Error(`Draft slot must be between 1 and ${teamCount}`);
   }
-  return { scoring, teamCount, rounds, slot };
+  return { scoring, teamCount, rounds, slot, displayName };
 }
 
 export async function createDemoRoom(
@@ -556,6 +596,7 @@ export async function createDemoRoom(
     roomId,
     config.humanSlots ?? [],
     settings.teamCount,
+    settings.displayName,
     settings.slot,
   );
   try {

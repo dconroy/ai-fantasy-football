@@ -10,9 +10,11 @@ import { draftStateFor, getOrCreateLeagueDraft } from "@/persistence/league-draf
 import {
   claimDemoSeat,
   demoClientState,
+  demoSeatMembers,
   findOrCreateOpenDemoRoom,
   releaseDemoSeat,
   takenSeatsFor,
+  validateDemoTeamName,
 } from "@/persistence/demo-rooms";
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
 
@@ -35,19 +37,24 @@ async function roomIsReal(roomId: string): Promise<boolean> {
 export async function POST(request: NextRequest) {
   let requestedSlot: number | null = null;
   let requestedRoom: string | null = null;
+  let displayName = "";
+  let requestedDisplayName: unknown;
   try {
     const body = (await request.json().catch(() => null)) as {
       slot?: unknown;
       roomId?: unknown;
+      displayName?: unknown;
     } | null;
     requestedSlot = parseSlot(body?.slot);
     requestedRoom =
       typeof body?.roomId === "string" && body.roomId.trim() ? body.roomId.trim() : null;
+    requestedDisplayName = body?.displayName;
   } catch {
     requestedSlot = null;
   }
 
   try {
+    displayName = validateDemoTeamName(requestedDisplayName);
     const existing = await getDemoClaims();
     // Prefer an explicitly requested room, then the cookie's room. Either way,
     // only reuse a room that still exists as a real (mock-config) room.
@@ -65,14 +72,14 @@ export async function POST(request: NextRequest) {
     }
     let claimed;
     try {
-      claimed = await claimDemoSeat(roomId, requestedSlot);
+      claimed = await claimDemoSeat(roomId, displayName, requestedSlot);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       // The room filled up while they were deciding: move them to a fresh room.
       // A specific-seat collision should surface so they can pick again.
       if (/full/i.test(message)) {
         roomId = (await findOrCreateOpenDemoRoom()).shared.id;
-        claimed = await claimDemoSeat(roomId, requestedSlot);
+        claimed = await claimDemoSeat(roomId, displayName, requestedSlot);
       } else if (/taken/i.test(message)) {
         return NextResponse.json(
           { error: message, takenSlots: await takenSeatsFor(roomId) },
@@ -92,13 +99,13 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({
       ...shared,
       draft: draftStateFor(shared, claimed.slot),
-      members: [],
+      members: await demoSeatMembers(shared.id),
       me: {
-        id: "demo",
-        displayName: `Seat ${claimed.slot}`,
+        id: `demo:${shared.id}:${claimed.slot}`,
+        displayName,
         role: "member",
         draftSlot: claimed.slot,
-        teamName: `Seat ${claimed.slot}`,
+        teamName: displayName,
         pins: [],
         avoids: [],
         weights: DEFAULT_STRATEGY_WEIGHTS,

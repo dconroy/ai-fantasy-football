@@ -72,6 +72,7 @@ export function DemoLobby() {
   const [teamCount, setTeamCount] = useState(12);
   const [rounds, setRounds] = useState(15);
   const [slot, setSlot] = useState(1);
+  const [teamName, setTeamName] = useState("");
   const [created, setCreated] = useState<CreatedDraft | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -140,7 +141,11 @@ export function DemoLobby() {
       const response = await fetch("/api/demo/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId: room.id, slot: requestedSlot }),
+        body: JSON.stringify({
+          roomId: room.id,
+          slot: requestedSlot,
+          displayName: teamName,
+        }),
       });
       const body = (await response.json()) as {
         error?: string;
@@ -166,7 +171,13 @@ export function DemoLobby() {
       const response = await fetch("/api/demo/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scoring, teamCount, rounds, slot }),
+        body: JSON.stringify({
+          scoring,
+          teamCount,
+          rounds,
+          slot,
+          displayName: teamName,
+        }),
       });
       const body = (await response.json()) as {
         error?: string;
@@ -259,6 +270,15 @@ export function DemoLobby() {
           Pick an open seat in a public mock, or choose the scoring, roster count,
           rounds, and draft slot for a new one.
         </p>
+        <label className="demo-name-field">
+          Your team name
+          <input
+            value={teamName}
+            maxLength={32}
+            placeholder="e.g. Cobra Kai"
+            onChange={(event) => setTeamName(event.target.value)}
+          />
+        </label>
       </section>
 
       {notice && <p className="demo-lobby-notice">{notice}</p>}
@@ -324,7 +344,12 @@ export function DemoLobby() {
                     )}
                     <button
                       type="button"
-                      disabled={busy || room.complete || room.openSeatList.length === 0}
+                      disabled={
+                        busy ||
+                        teamName.trim().length < 2 ||
+                        room.complete ||
+                        room.openSeatList.length === 0
+                      }
                       onClick={() => void joinRoom(room)}
                     >
                       {room.complete ? "Complete" : "Join"}
@@ -390,7 +415,10 @@ export function DemoLobby() {
                 ))}
               </select>
             </label>
-            <button type="submit" disabled={busy}>
+            <button
+              type="submit"
+              disabled={busy || teamName.trim().length < 2}
+            >
               {busy ? "Creating…" : "Create public draft"}
             </button>
           </form>

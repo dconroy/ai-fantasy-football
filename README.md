@@ -174,10 +174,11 @@ independent:
 
 ## Public demo
 
-`/demo` is an anonymous draft lobby — no account. Join a listed public room and choose an
-open seat, or create one with Standard/Half-PPR/PPR scoring, 8–14 rosters, 10–16 rounds,
-and your preferred slot. A new room provides a unique invite link for friends; they open it
-and choose any remaining seat. Robots fill empty seats, idle humans auto-draft after about
+`/demo` is an anonymous draft lobby — no account. Enter a team name, join a listed public
+room and choose an open seat, or create one with Standard/Half-PPR/PPR scoring, 8–14
+rosters, 10–16 rounds, and your preferred slot. A new room provides a unique invite link
+for friends; they enter their team name and choose any remaining seat. Robots fill empty
+seats, idle humans auto-draft after about
 30 seconds, and completed rooms are recycled after ~45 minutes. “Back to lobby” leaves the
 shared room intact instead of resetting everyone’s draft.
 

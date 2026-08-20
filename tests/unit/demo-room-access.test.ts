@@ -9,7 +9,11 @@ vi.mock("@/persistence/prisma", () => ({
 }));
 
 import { prisma } from "@/persistence/prisma";
-import { validateDemoSeat } from "@/persistence/demo-rooms";
+import {
+  demoSeatMembers,
+  validateDemoSeat,
+  validateDemoTeamName,
+} from "@/persistence/demo-rooms";
 
 const findUnique = vi.mocked(prisma.syncCheckpoint.findUnique);
 
@@ -57,5 +61,41 @@ describe("demo seat leases", () => {
     await expect(
       validateDemoSeat("demo:room-123", 4, "legacy-cookie"),
     ).resolves.toBe(false);
+  });
+
+  it("exposes active human team names without exposing session ids", async () => {
+    findUnique.mockResolvedValue({
+      id: "demo-seats:demo:room-123",
+      sequence: 2,
+      payload: JSON.stringify({
+        2: {
+          seenAt: new Date().toISOString(),
+          sessionId: "private-session",
+          displayName: "Cobra Kai",
+        },
+      }),
+      syncedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await expect(demoSeatMembers("demo:room-123")).resolves.toEqual([
+      expect.objectContaining({
+        displayName: "Cobra Kai",
+        teamName: "Cobra Kai",
+        draftSlot: 2,
+      }),
+    ]);
+    expect(JSON.stringify(await demoSeatMembers("demo:room-123"))).not.toContain(
+      "private-session",
+    );
+  });
+
+  it("validates and normalizes demo team names", () => {
+    expect(validateDemoTeamName("  The   Replacements  ")).toBe(
+      "The Replacements",
+    );
+    expect(() => validateDemoTeamName("A")).toThrow(/at least 2/);
+    expect(() => validateDemoTeamName("x".repeat(33))).toThrow(/32/);
   });
 });

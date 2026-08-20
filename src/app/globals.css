@@ -340,8 +340,24 @@ h2 {
   padding: 0 7px;
 }
 
+.control-strip input.demo-team-name {
+  width: 130px;
+  height: 34px;
+  border: 1px solid #3a5545;
+  border-radius: 6px;
+  padding: 0 9px;
+  background: #21392b;
+  color: white;
+}
+
+.control-strip select.seat-picker {
+  width: 120px;
+}
+
 .turn-indicator {
-  min-width: 185px;
+  width: 300px;
+  min-width: 300px;
+  flex-shrink: 0;
   display: grid;
   border-left: 1px solid #3a4d42;
   padding-left: 14px;
@@ -370,6 +386,10 @@ h2 {
   max-width: 460px;
 }
 
+.invite-copy-button {
+  min-width: 114px;
+}
+
 .control-strip.on-clock {
   background: #0d3b22;
   border-color: #46d484;
@@ -381,10 +401,6 @@ h2 {
   color: #7dffb1;
   font-size: 19px;
   letter-spacing: .01em;
-}
-
-.control-strip.on-clock .turn-indicator {
-  min-width: 300px;
 }
 
 @keyframes on-clock-pulse {
@@ -574,6 +590,10 @@ h2 {
   grid-template-columns: minmax(280px, .85fr) minmax(540px, 1.65fr) minmax(260px, .75fr);
   gap: 12px;
   align-items: start;
+}
+
+.workspace.spectating {
+  grid-template-columns: minmax(540px, 1.65fr) minmax(260px, .75fr);
 }
 
 .panel {
@@ -1380,6 +1400,16 @@ h2 {
   color: var(--green);
   background: var(--green-soft);
   box-shadow: inset 0 3px var(--green);
+}
+
+.board-head.human:not(.mine) {
+  color: #267a54;
+  box-shadow: inset 0 3px #4fba83;
+}
+
+.board-head.robot {
+  color: #89958e;
+  box-shadow: inset 0 3px #aeb7b2;
 }
 
 .board-cell {
@@ -2259,15 +2289,22 @@ button.board-pick:hover {
   .workspace {
     grid-template-columns: minmax(260px, .8fr) 1.5fr;
   }
+  .workspace.spectating {
+    grid-template-columns: 1fr;
+  }
   .right-column {
     grid-column: 1 / -1;
     grid-template-columns: 1fr 1fr 1fr;
+  }
+  .workspace.spectating .right-column {
+    grid-column: auto;
   }
 }
 
 @media (max-width: 760px) {
   .app { padding: 12px; }
   .topbar, .control-strip { align-items: flex-start; flex-wrap: wrap; }
+  .turn-indicator { width: 100%; min-width: 0; }
   .workspace { grid-template-columns: 1fr; }
   .right-column { grid-column: auto; grid-template-columns: 1fr; }
   .status-row { display: none; }
@@ -3570,6 +3607,16 @@ body:has(.landing) {
   background: #101713;
   color: #edf5ef;
   padding: 0 10px;
+}
+
+.demo-name-field {
+  max-width: 360px;
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+  color: #53645a;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .demo-room-actions select {

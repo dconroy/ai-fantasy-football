@@ -7,7 +7,10 @@ import {
   listMemberSeats,
   userPrefs,
 } from "@/persistence/league-draft";
-import { demoClientState } from "@/persistence/demo-rooms";
+import {
+  demoClientState,
+  demoSeatMembers,
+} from "@/persistence/demo-rooms";
 
 export async function boardPayload(
   draftId: string,
@@ -17,16 +20,25 @@ export async function boardPayload(
   const shared = await getOrCreateLeagueDraft(draftId);
   if (demo) {
     const slot = demo.slot ?? 0;
+    const members = await demoSeatMembers(draftId);
+    const member = members.find((candidate) => candidate.draftSlot === slot);
+    const displayName =
+      demo.role === "play"
+        ? member?.displayName ?? `Human · Slot ${slot}`
+        : "Spectator";
     return {
       ...shared,
       draft: draftStateFor(shared, slot),
-      members: [],
+      members,
       me: {
-        id: "demo",
-        displayName: demo.role === "play" ? `Seat ${slot}` : "Spectator",
+        id:
+          demo.role === "play"
+            ? `demo:${draftId}:${slot}`
+            : `demo:${draftId}:spectator`,
+        displayName,
         role: "member" as const,
         draftSlot: slot,
-        teamName: demo.role === "play" ? `Seat ${slot}` : "Watching",
+        teamName: demo.role === "play" ? displayName : "Watching",
         pins: [] as string[],
         avoids: [] as string[],
         weights: DEFAULT_STRATEGY_WEIGHTS,

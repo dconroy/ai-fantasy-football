@@ -269,6 +269,9 @@ export function DraftAssistant({
   const [chosenSeat, setChosenSeat] = useState<number | null>(null);
   const [demoIdle, setDemoIdle] = useState(false);
   const [demoStarted, setDemoStarted] = useState(!isDemo);
+  const [demoTeamName, setDemoTeamName] = useState("");
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const inviteCopiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [rankingSources, setRankingSources] = useState<
     Array<{ id: string; label: string; available: boolean }>
   >([{ id: "chen", label: "Boris Chen", available: true }]);
@@ -321,6 +324,12 @@ export function DraftAssistant({
   useEffect(() => {
     membersRef.current = members;
   }, [members]);
+  useEffect(
+    () => () => {
+      if (inviteCopiedTimer.current) clearTimeout(inviteCopiedTimer.current);
+    },
+    [],
+  );
 
   /** Draft slots that pause for a human: every member with an assigned slot. */
   function humanSlotList(): number[] {
@@ -373,6 +382,7 @@ export function DraftAssistant({
     if (payload.demo) {
       setDraftId(payload.demo.roomId);
       setDemoRole(payload.demo.role);
+      if (payload.demo.role === "play") setDemoTeamName(payload.me.teamName);
       if (payload.demo.takenSlots) setTakenSlots(payload.demo.takenSlots);
       setDemoStarted(payload.demo.started !== false);
     }
@@ -777,7 +787,12 @@ export function DraftAssistant({
       return me?.teamName || "COBRA KAI";
     }
     const occupant = members.find((member) => member.draftSlot === slot);
-    return occupant?.teamName || occupant?.displayName || `T${slot}`;
+    if (occupant) return occupant.teamName || occupant.displayName;
+    return isDemo ? `Robot · ${slot}` : `T${slot}`;
+  }
+
+  function isHumanDemoSlot(slot: number) {
+    return isDemo && members.some((member) => member.draftSlot === slot);
   }
 
   function reconcileRemote(snapshot: SyncSnapshot) {
@@ -1179,11 +1194,16 @@ export function DraftAssistant({
 
   async function joinDemo(seat?: number | null) {
     const requested = seat ?? chosenSeat ?? null;
+    if (demoTeamName.trim().length < 2) {
+      setNotice("Enter a team name before choosing a seat.");
+      return;
+    }
     const response = await fetch("/api/demo/join", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         roomId: draftId,
+        displayName: demoTeamName,
         ...(requested ? { slot: requested } : {}),
       }),
     });
@@ -1307,7 +1327,12 @@ export function DraftAssistant({
     const invite = `${window.location.origin}/demo?room=${encodeURIComponent(draftId)}&join=1`;
     try {
       await navigator.clipboard.writeText(invite);
-      setNotice("Invite link copied.");
+      setInviteCopied(true);
+      if (inviteCopiedTimer.current) clearTimeout(inviteCopiedTimer.current);
+      inviteCopiedTimer.current = setTimeout(() => {
+        setInviteCopied(false);
+        inviteCopiedTimer.current = null;
+      }, 2000);
     } catch {
       window.prompt("Copy this invite link:", invite);
     }
@@ -1477,23 +1502,41 @@ export function DraftAssistant({
               ? `${takenSlots.length} seated · ${Math.max(0, state.draft.teamCount - takenSlots.length)} open. Invite friends, then start when you're ready — robots will fill empty seats.`
               : "This draft is waiting. Invite friends, then start it when everyone is seated."}
           </span>
-          {demoRole === "play" ? (
-            <button onClick={() => void startDemoDraft()}>Start draft</button>
-          ) : (
-            <button className="secondary" type="button" onClick={() => void copyDemoInvite()}>
-              Copy invite
+          {demoRole !== "play" ? (
+            <button
+              className="secondary invite-copy-button"
+              type="button"
+              onClick={() => void copyDemoInvite()}
+            >
+              {inviteCopied ? "Copied!" : "Copy invite"}
             </button>
-          )}
+          ) : null}
         </div>
       )}
 
       <section className={`control-strip ${isMyTurn ? "on-clock" : ""}`}>
+        {!hasDraftSeat ? (
+          <label>
+            Team name
+            <input
+              className="demo-team-name"
+              value={demoTeamName}
+              maxLength={32}
+              placeholder="Your team"
+              onChange={(event) => setDemoTeamName(event.target.value)}
+            />
+          </label>
+        ) : null}
         <label>
           Draft slot
           {!hasDraftSeat ? (
             <select
+              className="seat-picker"
               value={chosenSeat ?? ""}
-              disabled={takenSlots.length >= state.draft.teamCount}
+              disabled={
+                demoTeamName.trim().length < 2 ||
+                takenSlots.length >= state.draft.teamCount
+              }
               onChange={(event) => {
                 const seat = Number(event.target.value);
                 if (!seat) return;
@@ -1504,7 +1547,9 @@ export function DraftAssistant({
               <option value="">
                 {takenSlots.length >= state.draft.teamCount
                   ? "Room full"
-                  : "Choose a seat"}
+                  : demoTeamName.trim().length < 2
+                    ? "Enter name first"
+                    : "Choose a seat"}
               </option>
               {Array.from({ length: state.draft.teamCount }, (_, index) => {
                 const seat = index + 1;
@@ -1600,11 +1645,11 @@ export function DraftAssistant({
                   Back to lobby
                 </Link>
                 <button
-                  className="secondary"
+                  className="secondary invite-copy-button"
                   type="button"
                   onClick={() => void copyDemoInvite()}
                 >
-                  Copy invite link
+                  {inviteCopied ? "Copied!" : "Copy invite link"}
                 </button>
                 {demoRole === "play" && !demoStarted && !draftComplete ? (
                   <button
@@ -1649,9 +1694,11 @@ export function DraftAssistant({
             </span>
           );
         })}
-        {members.length <= 1 && (
+        {members.length === 0 && (
           <small className="presence-empty">
-            Your league-mates appear here once they sign in with Yahoo.
+            {isDemo
+              ? "Human managers appear here after they choose a seat."
+              : "Your league-mates appear here once they sign in with Yahoo."}
           </small>
         )}
       </section>
@@ -2069,7 +2116,8 @@ export function DraftAssistant({
         </div>
       )}
 
-      <section className="workspace">
+      <section className={`workspace ${!hasDraftSeat ? "spectating" : ""}`}>
+        {hasDraftSeat ? (
         <aside className="panel recommendations">
           <div className="panel-heading">
             <div>
@@ -2208,6 +2256,7 @@ export function DraftAssistant({
           </>
           )}
         </aside>
+        ) : null}
 
         <section className="panel available-panel">
           <div className="panel-heading">
@@ -2446,8 +2495,9 @@ export function DraftAssistant({
             <div
               className={`board-head ${
                 hasDraftSeat && index + 1 === state.draft.userSlot ? "mine" : ""
-              }`}
+              } ${isDemo ? (isHumanDemoSlot(index + 1) ? "human" : "robot") : ""}`}
               key={`head-${index + 1}`}
+              title={teamLabel(index + 1)}
             >
               {teamLabel(index + 1)}
             </div>

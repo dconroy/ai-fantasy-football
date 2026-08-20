@@ -9,6 +9,7 @@ import { prisma } from "@/persistence/prisma";
 import { draftStateFor, getOrCreateLeagueDraft } from "@/persistence/league-draft";
 import {
   demoClientState,
+  demoSeatMembers,
   findOrCreateOpenDemoRoom,
   releaseDemoSeat,
   validateDemoSeat,
@@ -17,13 +18,20 @@ import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
 
 export const runtime = "nodejs";
 
-function demoMe(slot: number | null, role: "watch" | "play") {
+function demoMe(
+  roomId: string,
+  slot: number | null,
+  role: "watch" | "play",
+  displayName?: string,
+) {
+  const name =
+    role === "play" ? displayName || `Human · Slot ${slot}` : "Spectator";
   return {
-    id: "demo",
-    displayName: role === "play" ? `Seat ${slot}` : "Spectator",
+    id: `demo:${roomId}:${role === "play" ? slot : "spectator"}`,
+    displayName: name,
     role: "member" as const,
     draftSlot: slot ?? 0,
-    teamName: role === "play" ? `Seat ${slot}` : "Watching",
+    teamName: role === "play" ? name : "Watching",
     pins: [] as string[],
     avoids: [] as string[],
     weights: DEFAULT_STRATEGY_WEIGHTS,
@@ -62,11 +70,20 @@ export async function GET(request: Request) {
         ));
       if (seatIsValid && (await roomIsReal(existing.roomId))) {
         const shared = await getOrCreateLeagueDraft(existing.roomId);
+        const members = await demoSeatMembers(existing.roomId);
+        const member = members.find(
+          (candidate) => candidate.draftSlot === existing.slot,
+        );
         return NextResponse.json({
           ...shared,
           draft: draftStateFor(shared, existing.slot ?? 0),
-          members: [],
-          me: demoMe(existing.slot, existing.role),
+          members,
+          me: demoMe(
+            existing.roomId,
+            existing.slot,
+            existing.role,
+            member?.displayName,
+          ),
           demo: {
             role: existing.role,
             slot: existing.slot,
@@ -98,11 +115,12 @@ export async function GET(request: Request) {
       role: "watch",
       sessionId: null,
     });
+    const members = await demoSeatMembers(shared.id);
     const response = NextResponse.json({
       ...shared,
       draft: draftStateFor(shared, 0),
-      members: [],
-      me: demoMe(null, "watch"),
+      members,
+      me: demoMe(shared.id, null, "watch"),
       demo: {
         role: "watch",
         slot: null,
