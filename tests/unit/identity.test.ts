@@ -116,4 +116,10 @@ describe("resolveTrackedPlayerIds", () => {
       ),
     ).toEqual(["aj-brown"]);
   });
+
+  it("rewrites FantasyPros ids onto the current player row", () => {
+    expect(
+      resolveTrackedPlayerIds(["fp:WR:a.j. brown"], players),
+    ).toEqual(["aj-brown"]);
+  });
 });

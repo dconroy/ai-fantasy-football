@@ -146,6 +146,11 @@ export function resolvePlayerIdentity(
   return { status: "notFound", normalizedQuery };
 }
 
+/** Survives ranking-source swaps; `resolveTrackedPlayerIds` maps it back. */
+export function stableTrackId(player: Pick<Player, "name" | "position">): string {
+  return `chen:${player.position}:${player.name.toLowerCase()}`;
+}
+
 /**
  * Map saved pin/avoid ids onto the current player pool. Chen list swaps and
  * metadata backfill can change a row's id while the name + position stay put.
@@ -171,12 +176,16 @@ export function resolveTrackedPlayerIds(
   const resolved: string[] = [];
   const seen = new Set<string>();
   for (const id of ids) {
-    const chen = /^chen:([^:]+):(.+)$/i.exec(id);
+    const tagged = /^(?:chen|fp):([^:]+):(.+)$/i.exec(id);
     const next =
       byId.get(id) ??
-      (chen
-        ? byChen.get(`chen:${chen[1].toUpperCase()}:${chen[2].toLowerCase()}`) ??
-          byKey.get(`${normalizePlayerName(chen[2])}|${chen[1].toUpperCase()}`)
+      (tagged
+        ? byChen.get(
+            `chen:${tagged[1].toUpperCase()}:${tagged[2].toLowerCase()}`,
+          ) ??
+          byKey.get(
+            `${normalizePlayerName(tagged[2])}|${tagged[1].toUpperCase()}`,
+          )
         : undefined);
     if (!next || seen.has(next)) continue;
     seen.add(next);

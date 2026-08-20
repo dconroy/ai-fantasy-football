@@ -12,6 +12,7 @@ import {
   nextSelectionForSlot,
   recommendPlayers,
   resolveTrackedPlayerIds,
+  stableTrackId,
   rosterPicks,
   selectionForOverall,
   type DraftState,
@@ -376,9 +377,9 @@ export function DraftAssistant({
       players: payload.players,
       importedAt: payload.importedAt,
       source: payload.source,
-      pins: payload.me.pins,
-      avoids: payload.me.avoids,
-      weights: payload.me.weights,
+      pins: payload.demo ? stateRef.current.pins : payload.me.pins,
+      avoids: payload.demo ? stateRef.current.avoids : payload.me.avoids,
+      weights: payload.demo ? stateRef.current.weights : payload.me.weights,
       updatedAt: payload.updatedAt,
       leagueKey: payload.leagueKey,
     });
@@ -1088,10 +1089,16 @@ export function DraftAssistant({
   function toggleList(key: "pins" | "avoids", id: string) {
     setState((previous) => {
       const current = resolveTrackedPlayerIds(previous[key] ?? [], previous.players);
-      const next = current.includes(id)
+      const nextResolved = current.includes(id)
         ? current.filter((value) => value !== id)
         : [...current, id];
-      return { ...previous, [key]: next };
+      return {
+        ...previous,
+        [key]: nextResolved.map((playerId) => {
+          const row = previous.players.find((player) => player.id === playerId);
+          return row ? stableTrackId(row) : playerId;
+        }),
+      };
     });
     if (key === "avoids" && selected === id) setSelected(null);
   }
