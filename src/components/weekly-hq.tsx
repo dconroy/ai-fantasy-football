@@ -133,7 +133,6 @@ export function WeeklyHq() {
   const [data, setData] = useState<WeeklyData | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dark, setDark] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [leagues, setLeagues] = useState<LeagueOption[] | null>(null);
   const [leaguesError, setLeaguesError] = useState<string | null>(null);
@@ -175,7 +174,6 @@ export function WeeklyHq() {
           me: { darkMode?: boolean; role?: string; waiverWatch?: string[] } | null,
         ) => {
           if (me) {
-            setDark(me.darkMode === true);
             setIsAdmin(me.role === "admin");
             if (Array.isArray(me.waiverWatch)) setWatch(me.waiverWatch);
           }
@@ -239,7 +237,7 @@ export function WeeklyHq() {
   );
 
   return (
-    <main className={dark ? "app dark" : "app"}>
+    <main className="app dark">
       <header className="topbar">
         <div className="brand-lockup">
           <div className="brand-copy">
@@ -252,26 +250,17 @@ export function WeeklyHq() {
             </p>
           </div>
         </div>
-        <div className="status-row">
-          <Link className="status" href="/">Draft board</Link>
-          <button className="icon-button" onClick={() => void load()} disabled={loading}>
+        <nav className="topbar-nav" aria-label="Weekly HQ">
+          <Link href="/">Draft board</Link>
+          <button
+            type="button"
+            className="topbar-link"
+            onClick={() => void load()}
+            disabled={loading}
+          >
             {loading ? "Refreshing…" : "Refresh"}
           </button>
-          <button
-            className="icon-button"
-            onClick={() => {
-              const next = !dark;
-              setDark(next);
-              void fetch("/api/me", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ darkMode: next }),
-              });
-            }}
-          >
-            {dark ? "Light" : "Dark"}
-          </button>
-        </div>
+        </nav>
       </header>
 
       {loading && !data && <div className="notice">Loading weekly data from Yahoo…</div>}

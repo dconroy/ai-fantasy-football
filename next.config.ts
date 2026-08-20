@@ -39,7 +39,7 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "raw.githubusercontent.com",
-        pathname: "/dconroy/ai-fantasy-football/**",
+        pathname: "/dconroy/dojo.football/**",
       },
       // Yahoo player headshots are served from the *.yimg.com CDN.
       { protocol: "https", hostname: "**.yimg.com" },

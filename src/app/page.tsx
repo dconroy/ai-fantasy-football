@@ -24,7 +24,7 @@ export default function LandingPage() {
 
       <header className={styles.nav}>
         <Link className={styles.brand} href="/" aria-label="Draft Dojo home">
-          <Image src="/icon.svg" width={42} height={42} alt="" priority />
+          <Image src="/brand-icon.svg" width={42} height={42} alt="" unoptimized priority />
           <span>
             <strong>DRAFT DOJO</strong>
             <small>FANTASY WAR ROOM</small>
@@ -33,7 +33,7 @@ export default function LandingPage() {
         <nav>
           <Link href="/demo">Live rooms</Link>
           <a href="#film-room">Film room</a>
-          <a href="https://github.com/dconroy/ai-fantasy-football" target="_blank" rel="noreferrer">
+          <a href="https://github.com/dconroy/dojo.football" target="_blank" rel="noreferrer">
             Source
           </a>
           <Link className={styles.navCta} href="/login">
@@ -55,7 +55,7 @@ export default function LandingPage() {
             best five before you&apos;re on the clock.
           </p>
           <div className={styles.heroActions}>
-            <Link className={styles.primaryAction} href="/demo">
+            <Link className={styles.primaryAction} href="/demo#create">
               Enter a draft room <span aria-hidden="true">↗</span>
             </Link>
             <Link className={styles.secondaryAction} href="/login">
@@ -135,30 +135,25 @@ export default function LandingPage() {
       </section>
 
       <section className={styles.sourceSection}>
-        <div className={styles.sourceStamp} aria-hidden="true">
-          <span>OPEN</span>
-          <strong>SOURCE</strong>
-          <small>MIT · 2026</small>
-        </div>
         <div>
-          <p>THE WHOLE PLAYBOOK IS PUBLIC</p>
+          <p>THE WHOLE PLAYBOOK IS PUBLIC · MIT</p>
           <h2>Audit the ranking math. Change the weights. Run your own room.</h2>
         </div>
-        <a href="https://github.com/dconroy/ai-fantasy-football" target="_blank" rel="noreferrer">
+        <a href="https://github.com/dconroy/dojo.football" target="_blank" rel="noreferrer">
           View the repository <span aria-hidden="true">↗</span>
         </a>
       </section>
 
       <footer className={styles.footer}>
         <Link className={styles.brand} href="/">
-          <Image src="/icon.svg" width={34} height={34} alt="" />
+          <Image src="/brand-icon.svg" width={34} height={34} alt="" unoptimized />
           <span><strong>DRAFT DOJO</strong><small>FANTASY WAR ROOM</small></span>
         </Link>
         <p>
           You still make the pick in Sleeper or Yahoo. Not affiliated with Yahoo,
           Sleeper, or any ranking publisher.
         </p>
-        <a href="https://github.com/dconroy/ai-fantasy-football" target="_blank" rel="noreferrer">
+        <a href="https://github.com/dconroy/dojo.football" target="_blank" rel="noreferrer">
           GITHUB · MIT
         </a>
       </footer>

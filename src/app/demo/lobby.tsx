@@ -1,9 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { BrandLockup } from "@/components/brand-lockup";
 
 type Scoring = "standard" | "half-ppr" | "ppr";
 
@@ -76,6 +77,18 @@ export function DemoLobby() {
   const [joinNames, setJoinNames] = useState<Record<string, string>>({});
   const [created, setCreated] = useState<CreatedDraft | null>(null);
   const [copied, setCopied] = useState(false);
+  const teamNameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const input = teamNameRef.current;
+    if (!input) return;
+    const fromCreateCta = window.location.hash === "#create";
+    const focusName = () => {
+      input.focus({ preventScroll: !fromCreateCta });
+    };
+    const frame = window.requestAnimationFrame(focusName);
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,9 +227,14 @@ export function DemoLobby() {
     const url = typeof window === "undefined" ? invite : `${window.location.origin}${invite}`;
     return (
       <main className="demo-lobby">
+        <div className="broadcast-bar">
+          <span>PUBLIC DRAFT NETWORK</span>
+          <span>LIVE BOARDS · ROSTER-AWARE RANKS · POST-DRAFT GRADES</span>
+          <span>INVITE READY</span>
+        </div>
         <section className="demo-share-card">
           <p className="eyebrow">Your draft is ready</p>
-          <h1>Invite your league-mates.</h1>
+          <h1>Invite your friends to the mock draft.</h1>
           <p>
             You have slot {created.slot}. The clock stays paused until you start
             it from the board — share this link, wait for friends, then kick it
@@ -246,22 +264,19 @@ export function DemoLobby() {
 
   return (
     <main className="demo-lobby">
+      <div className="broadcast-bar">
+        <span>PUBLIC DRAFT NETWORK</span>
+        <span>LIVE BOARDS · ROSTER-AWARE RANKS · POST-DRAFT GRADES</span>
+        <span>OPEN LOBBY</span>
+      </div>
       <header className="demo-lobby-header">
-        <Link className="brand-lockup" href="/">
-          <Image
-            className="brand-mark"
-            src="/dojo-mark.png"
-            alt="Draft Dojo"
-            width={58}
-            height={58}
-            priority
-          />
-          <span className="brand-copy">
-            <span className="brand-tagline">Public mock drafts</span>
-            <strong>Draft Dojo</strong>
-          </span>
-        </Link>
-        <Link href="/">Home</Link>
+        <BrandLockup />
+        <nav>
+          <Link href="/">Home</Link>
+          <Link className="nav-cta" href="/login">
+            Sync a league
+          </Link>
+        </nav>
       </header>
 
       <section className="demo-lobby-intro">
@@ -369,16 +384,19 @@ export function DemoLobby() {
           )}
         </section>
 
-        <section className="demo-lobby-panel demo-create-panel">
+        <section id="create" className="demo-lobby-panel demo-create-panel">
           <p className="eyebrow">New room</p>
           <h2>Set up a draft</h2>
           <form onSubmit={(event) => void createRoom(event)}>
             <label className="demo-create-name">
               Your team name
               <input
+                ref={teamNameRef}
+                id="create-team-name"
                 value={teamName}
                 maxLength={32}
                 placeholder="e.g. Cobra Kai"
+                autoComplete="off"
                 onChange={(event) => setTeamName(event.target.value)}
               />
             </label>

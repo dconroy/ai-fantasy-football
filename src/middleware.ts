@@ -29,6 +29,7 @@ function isPublic(pathname: string) {
   if (pathname.startsWith("/landing/")) return true;
   if (pathname.startsWith("/api/demo/")) return true;
   if (pathname.startsWith("/docs/screenshots/")) return true;
+  if (/\.(?:svg|png|jpg|jpeg|gif|webp|ico)$/i.test(pathname)) return true;
   return false;
 }
 

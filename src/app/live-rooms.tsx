@@ -138,7 +138,10 @@ export function LiveRooms() {
         <p className={styles.liveRoomsEmpty}>{summary.emptyPrompt}</p>
       ) : null}
 
-      <Link className={styles.liveRoomsCta} href="/demo">
+      <Link
+        className={styles.liveRoomsCta}
+        href={summary.cta === "Create a demo draft" ? "/demo#create" : "/demo"}
+      >
         <span>{summary.cta}</span>
         <span aria-hidden="true">JOIN ROOM ↗</span>
       </Link>

@@ -6,7 +6,7 @@
 
 - Live app: **[dojo.football](https://dojo.football)**
 - No-signup multiplayer demo: **[dojo.football/demo](https://dojo.football/demo)**
-- Source: **[github.com/dconroy/ai-fantasy-football](https://github.com/dconroy/ai-fantasy-football)**
+- Source: **[github.com/dconroy/dojo.football](https://github.com/dconroy/dojo.football)**
 - License: **[MIT](LICENSE)**
 
 Draft Dojo is a browser-based command center for **8–14 team snake drafts**. It follows

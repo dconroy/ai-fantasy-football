@@ -779,36 +779,12 @@
 
 .sourceSection {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: clamp(28px, 5vw, 76px);
   align-items: center;
   border-top: 1px solid var(--rule);
   border-bottom: 1px solid var(--rule);
   padding: clamp(42px, 6vw, 74px) 0;
-}
-
-.sourceStamp {
-  aspect-ratio: 1;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  border: 2px solid var(--orange);
-  border-radius: 50%;
-  color: var(--orange);
-  transform: rotate(-7deg);
-}
-
-.sourceStamp span,
-.sourceStamp small {
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 8px;
-  font-weight: 850;
-  letter-spacing: .12em;
-}
-
-.sourceStamp strong {
-  font-size: 23px;
-  letter-spacing: -.04em;
 }
 
 .sourceSection h2 {
@@ -936,10 +912,6 @@
 
   .proofStack {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .sourceStamp {
-    width: 110px;
   }
 }
 

@@ -20,6 +20,7 @@ import {
   type Position,
   type StrategyWeights,
 } from "@/domain";
+import { BrandLockup } from "@/components/brand-lockup";
 import { DEFAULT_STRATEGY_WEIGHTS } from "@/config/strategy";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for the dormant CSV-import fallback (importFile)
 import {
@@ -333,7 +334,6 @@ export function DraftAssistant({
   const [syncPaused, setSyncPaused] = useState(false);
   const [previewMember, setPreviewMember] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
-  const [dark, setDark] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundPreferenceReady, setSoundPreferenceReady] = useState(false);
   const [yahooConnected, setYahooConnected] = useState(false);
@@ -357,8 +357,10 @@ export function DraftAssistant({
   const [yahooLeaguesError, setYahooLeaguesError] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [playerBrief, setPlayerBrief] = useState<{
-    season: number;
-    stats: Array<{ label: string; value: string }>;
+    seasons: Array<{
+      year: number;
+      stats: Array<{ label: string; value: string }>;
+    }>;
     news: Array<{ title: string; url: string; published?: string }>;
   } | null>(null);
   const [briefStatus, setBriefStatus] = useState<"idle" | "loading" | "ready">(
@@ -663,13 +665,13 @@ export function DraftAssistant({
           pins: state.pins,
           avoids: state.avoids,
           weights: state.weights,
-          darkMode: dark,
+          darkMode: true,
           teamName: me.teamName,
         }),
       }).catch(() => undefined);
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [ready, isDemo, state, state.draft.userSlot, state.pins, state.avoids, state.weights, dark, me]);
+  }, [ready, isDemo, state, state.draft.userSlot, state.pins, state.avoids, state.weights, me]);
 
   const current = selectionForOverall(state.draft.picks.length + 1);
   const hasDraftSeat = !isDemo || demoRole === "play";
@@ -1338,23 +1340,28 @@ export function DraftAssistant({
     setDetailId(id);
   }
 
+  const detailReady = Boolean(detailPlayer);
   useEffect(() => {
-    if (!detailPlayer) {
+    if (!detailId) {
       setPlayerBrief(null);
       setBriefStatus("idle");
       return;
     }
+    if (!detailReady) return;
+    const player = stateRef.current.players.find((entry) => entry.id === detailId);
+    if (!player) return;
     let cancelled = false;
+    setPlayerBrief(null);
     setBriefStatus("loading");
     const params = new URLSearchParams({
-      name: detailPlayer.name,
-      position: detailPlayer.position,
+      name: player.name,
+      position: player.position,
     });
     void fetch(`/api/players/brief?${params}`, { cache: "no-store" })
       .then((response) => response.json())
       .then((body) => {
         if (cancelled) return;
-        if (body?.stats || body?.news) {
+        if (body?.seasons || body?.news) {
           setPlayerBrief(body);
           setBriefStatus("ready");
         } else {
@@ -1371,7 +1378,7 @@ export function DraftAssistant({
     return () => {
       cancelled = true;
     };
-  }, [detailPlayer]);
+  }, [detailId, detailReady]);
 
   const isAdmin = !isDemo && me?.role === "admin";
   const adminView = isAdmin && !previewMember;
@@ -1454,32 +1461,30 @@ export function DraftAssistant({
     setNotice(`Updated ${updated.displayName}.`);
   }
 
-  if (!ready) return <main className="loading">Loading draft room…</main>;
+  if (!ready) return <main className="app dark loading">Loading draft room…</main>;
 
   return (
-    <main className={dark ? "app dark" : "app"}>
+    <main className="app dark">
+      <div className="broadcast-bar">
+        <span>{isDemo ? "PUBLIC DRAFT ROOM" : "LEAGUE DRAFT ROOM"}</span>
+        <span>LIVE BOARD · ROSTER-AWARE RANKS · POST-DRAFT GRADES</span>
+        <span>WAR ROOM</span>
+      </div>
       <header className="topbar">
-        <div className="brand-lockup">
-          <Image
-            className="brand-mark"
-            src="/dojo-mark.png"
-            alt="Draft Dojo"
-            width={58}
-            height={58}
-            priority
-          />
-          <div className="brand-copy">
-            <p className="eyebrow">{isDemo ? "Public demo · dojo.football" : "dojo.football"}</p>
-            <h1>Draft Dojo</h1>
-            <p className="brand-tagline">Recalculates your top five after every pick.</p>
-          </div>
-        </div>
-        <div className="status-row">
-          {!isDemo ? <Link className="status" href="/weekly">Weekly HQ</Link> : (
-            <Link className="status" href="/">Home</Link>
+        <BrandLockup kicker={isDemo ? "PUBLIC DEMO · DOJO.FOOTBALL" : "FANTASY WAR ROOM"} />
+        <nav className="topbar-nav" aria-label="Board">
+          {isDemo ? (
+            <Link href="/">Home</Link>
+          ) : (
+            <Link href="/weekly">Weekly HQ</Link>
           )}
-          <span className={`status ${state.mode === "mock" ? "simulation" : "live"}`}>
-            ●{" "}
+          <span
+            className={`topbar-mode ${
+              state.mode === "mock" || state.leagueKey?.startsWith("mock.")
+                ? "mock"
+                : "live"
+            }`}
+          >
             {state.mode === "mock"
               ? "Manual mock"
               : state.leagueKey?.startsWith("mock.")
@@ -1487,47 +1492,48 @@ export function DraftAssistant({
                 : "Live board"}
           </span>
           {isDemo ? null : yahooConnected ? (
-            <span className="status connected">
-              ● {me?.displayName ?? "Yahoo"} signed in
-            </span>
+            <span className="topbar-mode">{me?.displayName ?? "Yahoo"}</span>
           ) : (
-            <a className="status yahoo-connect" href="/api/yahoo/auth">
-              Sign in with Yahoo
-            </a>
+            <a href="/api/yahoo/auth">Sign in with Yahoo</a>
           )}
           {isAdmin && (
             <>
               <button
-                className="icon-button admin-open"
+                type="button"
+                className="topbar-link"
                 onClick={() => {
                   setPreviewMember(false);
                   setAdminOpen(true);
                 }}
-                title="Assign slots and manage sync"
               >
                 League admin
               </button>
               <button
-                className={`icon-button ${previewMember ? "preview-active" : ""}`}
+                type="button"
+                className={`topbar-link ${previewMember ? "is-active" : ""}`}
                 onClick={() => setPreviewMember((value) => !value)}
-                title="Preview the app the way a regular member sees it"
               >
                 {previewMember ? "Exit member view" : "View as member"}
               </button>
             </>
           )}
-          <form action="/api/auth/logout" method="post">
-            <button className="icon-button" type="submit">Sign out</button>
-          </form>
-          <button className="icon-button" onClick={() => setDark((value) => !value)}>
-            {dark ? "Light" : "Dark"}
-          </button>
-          {draftComplete && (
-            <button className="icon-button" onClick={() => setReportOpen(true)}>
+          {isDemo ? null : (
+            <form action="/api/auth/logout" method="post">
+              <button className="topbar-link" type="submit">
+                Sign out
+              </button>
+            </form>
+          )}
+          {draftComplete ? (
+            <button
+              type="button"
+              className="topbar-cta"
+              onClick={() => setReportOpen(true)}
+            >
               Report card
             </button>
-          )}
-        </div>
+          ) : null}
+        </nav>
       </header>
 
       {isAdmin && previewMember && (
@@ -1992,6 +1998,7 @@ export function DraftAssistant({
             aria-labelledby="player-detail-title"
           >
             <button
+              type="button"
               className="icon-button detail-close"
               onClick={() => setDetailId(null)}
               aria-label="Close player details"
@@ -2080,22 +2087,36 @@ export function DraftAssistant({
 
             <div className="detail-body">
               {briefStatus === "loading" ? (
-                <p className="detail-note">Loading 2025 stats and news…</p>
+                <p className="detail-note">Loading season stats and news…</p>
               ) : null}
 
-              {playerBrief && playerBrief.stats.length > 0 ? (
+              {playerBrief && playerBrief.seasons.length > 0 ? (
                 <div className="detail-section">
                   <div className="detail-why-head">
-                    <strong>{playerBrief.season} season</strong>
+                    <strong>Season stats</strong>
                     <span>Sleeper PPR</span>
                   </div>
-                  <div className="detail-season">
-                    {playerBrief.stats.map((chip) => (
-                      <div key={chip.label}>
-                        <span>{chip.label}</span>
-                        <strong>{chip.value}</strong>
-                      </div>
-                    ))}
+                  <div className="detail-season-wrap">
+                    <table className="detail-season-table">
+                      <thead>
+                        <tr>
+                          <th>Year</th>
+                          {playerBrief.seasons[0].stats.map((chip) => (
+                            <th key={chip.label}>{chip.label}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {playerBrief.seasons.map((row) => (
+                          <tr key={row.year}>
+                            <th scope="row">{row.year}</th>
+                            {row.stats.map((chip) => (
+                              <td key={chip.label}>{chip.value}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               ) : null}
@@ -2123,8 +2144,8 @@ export function DraftAssistant({
                 </div>
               ) : briefStatus === "ready" &&
                 (!playerBrief || playerBrief.news.length === 0) &&
-                (!playerBrief || playerBrief.stats.length === 0) ? (
-                <p className="detail-note">No 2025 stats or news found for this player.</p>
+                (!playerBrief || playerBrief.seasons.length === 0) ? (
+                <p className="detail-note">No recent stats or news found for this player.</p>
               ) : null}
 
               {detailRec ? (
@@ -2186,19 +2207,22 @@ export function DraftAssistant({
               <p className="eyebrow">Live recommendations</p>
               <h2>{recoTab === "insights" ? "Insights" : "Top five"}</h2>
             </div>
-            <span>
-              {!hasDraftSeat
-                ? "choose a seat"
-                : recoTab === "insights"
-                ? insightFlags
-                  ? `${insightFlags} alert${insightFlags === 1 ? "" : "s"}`
-                  : "no flags"
-                : draftComplete
-                  ? "draft complete"
-                  : recommendation.picksUntilFollowingSelection === null
-                    ? "last pick"
-                    : `${recommendation.picksUntilFollowingSelection} picks until your next turn`}
-            </span>
+            <div className="panel-heading-meta">
+              <span>
+                {!hasDraftSeat
+                  ? "choose a seat"
+                  : recoTab === "insights"
+                  ? insightFlags
+                    ? `${insightFlags} alert${insightFlags === 1 ? "" : "s"}`
+                    : "no flags"
+                  : draftComplete
+                    ? "draft complete"
+                    : recommendation.picksUntilFollowingSelection === null
+                      ? "last pick"
+                      : `${recommendation.picksUntilFollowingSelection} picks until your next turn`}
+              </span>
+              <b className="live-pill">LIVE</b>
+            </div>
           </div>
           {!hasDraftSeat ? (
             <p className="insight-empty">
@@ -2486,12 +2510,14 @@ export function DraftAssistant({
                       ? picks.map((entry) => (
                           <button
                             type="button"
-                            className="roster-player"
+                            className={`roster-player pos-${entry.player.position.toLowerCase()}`}
                             key={entry.overall}
                             onClick={() => openDetail(entry.player.id)}
                           >
-                            {entry.player.name}
-                            {entry.player.byeWeek ? ` · Bye ${entry.player.byeWeek}` : ""}
+                            <strong>{entry.player.name}</strong>
+                            {entry.player.byeWeek ? (
+                              <span>Bye {entry.player.byeWeek}</span>
+                            ) : null}
                           </button>
                         ))
                       : <em>Open</em>}

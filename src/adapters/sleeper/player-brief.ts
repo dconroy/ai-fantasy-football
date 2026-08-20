@@ -4,9 +4,7 @@ import { normalizePlayerName } from "@/domain/identity";
 import { playerMetaKey } from "@/adapters/yahoo/player-meta";
 import { getSleeperRecords } from "./players";
 
-const LAST_SEASON = 2025;
-const STATS_SOURCE = `sleeper-stats-${LAST_SEASON}`;
-const STATS_URL = `https://api.sleeper.app/v1/stats/nfl/regular/${LAST_SEASON}`;
+export const STAT_SEASONS = [2025, 2024, 2023, 2022] as const;
 const STATS_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const ESPN_SEARCH =
   "https://site.web.api.espn.com/apis/search/v2?region=us&lang=en&query=";
@@ -16,6 +14,11 @@ export interface StatChip {
   readonly value: string;
 }
 
+export interface SeasonStatRow {
+  readonly year: number;
+  readonly stats: readonly StatChip[];
+}
+
 export interface PlayerNewsItem {
   readonly title: string;
   readonly url: string;
@@ -23,8 +26,7 @@ export interface PlayerNewsItem {
 }
 
 export interface PlayerBrief {
-  readonly season: number;
-  readonly stats: readonly StatChip[];
+  readonly seasons: readonly SeasonStatRow[];
   readonly news: readonly PlayerNewsItem[];
 }
 
@@ -88,10 +90,31 @@ export function chipsForPosition(
   }
 }
 
-async function loadSeasonStats(): Promise<Record<string, RawStats>> {
+export function seasonRowsForPosition(
+  position: string,
+  byYear: ReadonlyArray<{ year: number; raw: RawStats | undefined }>,
+): SeasonStatRow[] {
+  return byYear
+    .map(({ year, raw }) => ({
+      year,
+      stats: chipsForPosition(position, raw),
+    }))
+    .filter((row) => row.stats.some((chip) => chip.value !== "—"));
+}
+
+function statsSource(year: number) {
+  return `sleeper-stats-${year}`;
+}
+
+function statsUrl(year: number) {
+  return `https://api.sleeper.app/v1/stats/nfl/regular/${year}`;
+}
+
+async function loadSeasonStats(year: number): Promise<Record<string, RawStats>> {
+  const source = statsSource(year);
   try {
     const row = await prisma.dataImport.findFirst({
-      where: { source: STATS_SOURCE },
+      where: { source },
       orderBy: { fetchedAt: "desc" },
       select: { payload: true, fetchedAt: true },
     });
@@ -103,7 +126,7 @@ async function loadSeasonStats(): Promise<Record<string, RawStats>> {
   }
 
   try {
-    const response = await fetch(STATS_URL, {
+    const response = await fetch(statsUrl(year), {
       cache: "no-store",
       signal: AbortSignal.timeout(20_000),
     });
@@ -112,7 +135,7 @@ async function loadSeasonStats(): Promise<Record<string, RawStats>> {
     await prisma.dataImport
       .create({
         data: {
-          source: STATS_SOURCE,
+          source,
           playerCount: Object.keys(payload).length,
           checksum: createHash("sha256")
             .update(String(Object.keys(payload).length))
@@ -167,10 +190,10 @@ export async function loadPlayerBrief(
   name: string,
   position: string,
 ): Promise<PlayerBrief> {
-  const [records, stats, news] = await Promise.all([
+  const [records, news, ...seasonMaps] = await Promise.all([
     getSleeperRecords(),
-    loadSeasonStats(),
     loadEspnNews(name),
+    ...STAT_SEASONS.map((year) => loadSeasonStats(year)),
   ]);
 
   const key = playerMetaKey(name, position);
@@ -182,10 +205,15 @@ export async function loadPlayerBrief(
       entry.position === position.toUpperCase(),
   );
 
-  const raw = record ? stats[record.sleeperId] : undefined;
+  const sleeperId = record?.sleeperId;
   return {
-    season: LAST_SEASON,
-    stats: chipsForPosition(position, raw),
+    seasons: seasonRowsForPosition(
+      position,
+      STAT_SEASONS.map((year, index) => ({
+        year,
+        raw: sleeperId ? seasonMaps[index]?.[sleeperId] : undefined,
+      })),
+    ),
     news,
   };
 }
