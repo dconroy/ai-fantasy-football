@@ -3443,11 +3443,12 @@ body:has(.landing) {
 
 .demo-lobby {
   min-height: 100vh;
-  padding: 28px clamp(18px, 4vw, 64px) 64px;
+  padding: 22px clamp(18px, 4vw, 64px) 64px;
   background:
-    radial-gradient(circle at 85% 0, rgb(45 155 100 / 16%) 0, transparent 30%),
-    radial-gradient(circle at 8% 15%, rgb(199 107 42 / 12%) 0, transparent 25%),
-    #101713;
+    linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px),
+    linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px),
+    #0d1511;
+  background-size: 48px 48px;
   color: #edf5ef;
 }
 
@@ -3456,7 +3457,9 @@ body:has(.landing) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 auto 68px;
+  margin: 0 auto 36px;
+  border-bottom: 1px solid #26372e;
+  padding-bottom: 18px;
 }
 
 .demo-lobby-header a {
@@ -3465,39 +3468,60 @@ body:has(.landing) {
 }
 
 .demo-lobby-header > a:last-child {
-  color: #a9b8ae;
+  border: 1px solid #34463c;
+  border-radius: 999px;
+  padding: 7px 13px;
+  color: #c6d1ca;
   font-size: 13px;
   font-weight: 700;
 }
 
 .demo-lobby-intro {
-  max-width: 760px;
+  max-width: 1240px;
   display: grid;
-  gap: 12px;
-  margin: 0 auto 34px;
-  text-align: center;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  column-gap: clamp(36px, 8vw, 120px);
+  row-gap: 10px;
+  margin: 0 auto 30px;
+  border-bottom: 1px solid #26372e;
+  padding: 14px 0 30px;
+  text-align: left;
+}
+
+.demo-lobby-intro > .eyebrow {
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #e07936;
+  letter-spacing: .18em;
 }
 
 .demo-lobby-intro h1,
 .demo-share-card h1 {
   color: #fff;
-  font-size: clamp(34px, 6vw, 64px);
-  line-height: .98;
+  font-size: clamp(38px, 5vw, 62px);
+  line-height: .95;
+  letter-spacing: -.045em;
 }
 
-.demo-lobby-intro > p:last-child,
+.demo-lobby-intro > p:last-of-type,
 .demo-share-card > p {
   color: #a9b8ae;
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.demo-lobby-intro > p:last-of-type {
+  max-width: 650px;
 }
 
 .demo-lobby-grid {
   max-width: 1240px;
   display: grid;
   grid-template-areas: "create rooms";
-  grid-template-columns: minmax(300px, .75fr) minmax(0, 1.45fr);
-  gap: 18px;
+  grid-template-columns: minmax(300px, .68fr) minmax(0, 1.55fr);
+  gap: 14px;
   margin: 0 auto;
 }
 
@@ -3511,11 +3535,19 @@ body:has(.landing) {
 
 .demo-lobby-panel,
 .demo-share-card {
-  border: 1px solid #334039;
-  border-radius: 16px;
-  background: rgb(24 32 27 / 94%);
-  box-shadow: 0 24px 80px rgb(0 0 0 / 24%);
-  padding: 24px;
+  border: 1px solid #2e4036;
+  border-radius: 8px;
+  background: #131d18;
+  box-shadow: 0 14px 35px rgb(0 0 0 / 16%);
+  padding: 22px;
+}
+
+.demo-create-panel {
+  border-top: 3px solid #d36d2e;
+}
+
+.demo-rooms-panel {
+  border-top: 3px solid #3a9b69;
 }
 
 .demo-lobby-panel-head {
@@ -3526,8 +3558,18 @@ body:has(.landing) {
 }
 
 .demo-lobby-panel h2 {
-  margin: 4px 0 0;
-  font-size: 25px;
+  margin: 6px 0 0;
+  font-size: 22px;
+  letter-spacing: -.02em;
+}
+
+.demo-lobby-panel .eyebrow {
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #769887;
+  letter-spacing: .16em;
 }
 
 .demo-lobby-panel-head > span {
@@ -3542,7 +3584,7 @@ body:has(.landing) {
 .demo-room-list {
   display: grid;
   gap: 10px;
-  margin: 22px 0 0;
+  margin: 18px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -3552,10 +3594,18 @@ body:has(.landing) {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  border: 1px solid #334039;
-  border-radius: 11px;
-  background: #1d2721;
-  padding: 15px;
+  border: 1px solid #2c3d34;
+  border-left: 3px solid #3d8e64;
+  border-radius: 5px;
+  background: #18231d;
+  padding: 14px 15px;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.demo-room-card:hover {
+  border-color: #456252;
+  border-left-color: #66c18e;
+  background: #1b2921;
 }
 
 .demo-room-card.complete {
@@ -3579,7 +3629,7 @@ body:has(.landing) {
 }
 
 .demo-room-main span {
-  color: #9ca9a0;
+  color: #95a59b;
   font-size: 12px;
 }
 
@@ -3610,13 +3660,32 @@ body:has(.landing) {
 }
 
 .demo-name-field {
-  max-width: 360px;
+  grid-column: 2;
+  grid-row: 1 / 4;
+  width: 100%;
   display: grid;
   gap: 6px;
-  margin-top: 18px;
-  color: #53645a;
+  align-self: center;
+  margin: 0;
+  color: #c7d2cb;
   font-size: 12px;
   font-weight: 700;
+}
+
+.demo-name-field::before {
+  content: "01";
+  color: #d36d2e;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  letter-spacing: .15em;
+}
+
+.demo-name-field input {
+  height: 48px;
+  border-color: #52715f;
+  border-radius: 5px;
+  background: #111b16;
+  font-size: 14px;
 }
 
 .demo-room-actions select {
@@ -3679,13 +3748,29 @@ body:has(.landing) {
 
 @media (max-width: 800px) {
   .demo-lobby-header {
-    margin-bottom: 44px;
+    margin-bottom: 22px;
+  }
+
+  .demo-lobby-intro {
+    grid-template-columns: 1fr;
+    padding-top: 4px;
+  }
+
+  .demo-lobby-intro h1 {
+    font-size: clamp(38px, 12vw, 56px);
+  }
+
+  .demo-name-field {
+    grid-column: 1;
+    grid-row: auto;
+    max-width: none;
+    margin-top: 12px;
   }
 
   .demo-lobby-grid {
     grid-template-areas:
-      "create"
-      "rooms";
+      "rooms"
+      "create";
     grid-template-columns: 1fr;
   }
 
