@@ -100,6 +100,7 @@ export async function PUT(request: Request) {
         }
       }
       await applyChenImport(body.chen, draftId);
+      await ensureBoardByes(draftId);
     } else if (body?.action === "players" && Array.isArray(body.players)) {
       await replacePlayers(
         body.players,

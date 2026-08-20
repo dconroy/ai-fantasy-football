@@ -1491,8 +1491,30 @@ export function DraftAssistant({
         <label>
           Draft slot
           {!hasDraftSeat ? (
-            <select value="" disabled>
-              <option value="">Not seated</option>
+            <select
+              value={chosenSeat ?? ""}
+              disabled={takenSlots.length >= state.draft.teamCount}
+              onChange={(event) => {
+                const seat = Number(event.target.value);
+                if (!seat) return;
+                setChosenSeat(seat);
+                void joinDemo(seat);
+              }}
+            >
+              <option value="">
+                {takenSlots.length >= state.draft.teamCount
+                  ? "Room full"
+                  : "Choose a seat"}
+              </option>
+              {Array.from({ length: state.draft.teamCount }, (_, index) => {
+                const seat = index + 1;
+                const taken = takenSlots.includes(seat);
+                return (
+                  <option key={seat} value={seat} disabled={taken}>
+                    Seat {seat}{taken ? " · taken" : ""}
+                  </option>
+                );
+              })}
             </select>
           ) : (
             <select

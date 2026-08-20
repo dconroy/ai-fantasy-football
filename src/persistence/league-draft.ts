@@ -504,12 +504,37 @@ export async function applyChenImport(
   if (!incoming) throw new Error("Chen import contained no players");
   const current = await getOrCreateLeagueDraft(draftId);
   if (current.picks.length === 0) {
-    return saveSharedDraft({
+    const currentByKey = new Map(
+      current.players.map((player) => [
+        playerMetaKey(player.name, player.position),
+        player,
+      ]),
+    );
+    const players = incoming.players.map((player) => {
+      const existing = currentByKey.get(
+        playerMetaKey(player.name, player.position),
+      );
+      if (!existing) return player;
+      return {
+        ...player,
+        teamName: existing.teamName,
+        byeWeek: player.byeWeek ?? existing.byeWeek,
+        imageUrl: existing.imageUrl,
+        percentOwned: existing.percentOwned,
+        playerKey: existing.playerKey,
+        injuryStatus: existing.injuryStatus,
+        projectedPoints: existing.projectedPoints,
+        aliases: existing.aliases,
+      };
+    });
+    const saved = await saveSharedDraft({
       draftId,
-      players: incoming.players,
+      players,
       source: incoming.source,
       importedAt: incoming.importedAt,
     });
+    lastByeCheck.delete(draftId);
+    return saved;
   }
 
   const byId = new Map(incoming.players.map((player) => [player.id, player]));
@@ -538,12 +563,14 @@ export async function applyChenImport(
       seen.add(key);
     }
   }
-  return saveSharedDraft({
+  const saved = await saveSharedDraft({
     draftId,
     players: merged,
     source: incoming.source,
     importedAt: incoming.importedAt,
   });
+  lastByeCheck.delete(draftId);
+  return saved;
 }
 
 export function userPrefs(user: User): {
