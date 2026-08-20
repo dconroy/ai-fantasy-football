@@ -3547,9 +3547,7 @@ body:has(.landing) {
 .demo-lobby-intro {
   max-width: 1240px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-  column-gap: clamp(36px, 8vw, 120px);
-  row-gap: 10px;
+  gap: 10px;
   margin: 0 auto 30px;
   border-bottom: 1px solid #26372e;
   padding: 14px 0 30px;
@@ -3727,33 +3725,12 @@ body:has(.landing) {
   padding: 0 10px;
 }
 
-.demo-name-field {
-  grid-column: 2;
-  grid-row: 1 / 4;
-  width: 100%;
-  display: grid;
-  gap: 6px;
-  align-self: center;
-  margin: 0;
-  color: #c7d2cb;
-  font-size: 12px;
-  font-weight: 700;
+.demo-create-panel form > .demo-create-name {
+  grid-column: 1 / -1;
 }
 
-.demo-name-field::before {
-  content: "01";
-  color: #d36d2e;
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  letter-spacing: .15em;
-}
-
-.demo-name-field input {
-  height: 48px;
-  border-color: #52715f;
-  border-radius: 5px;
-  background: #111b16;
-  font-size: 14px;
+.demo-room-actions input {
+  min-width: 132px;
 }
 
 .demo-room-actions select {
@@ -3820,7 +3797,6 @@ body:has(.landing) {
   }
 
   .demo-lobby-intro {
-    grid-template-columns: 1fr;
     padding-top: 4px;
   }
 
@@ -3828,11 +3804,8 @@ body:has(.landing) {
     font-size: clamp(38px, 12vw, 56px);
   }
 
-  .demo-name-field {
-    grid-column: 1;
-    grid-row: auto;
-    max-width: none;
-    margin-top: 12px;
+  .demo-room-actions input {
+    width: 100%;
   }
 
   .demo-lobby-grid {

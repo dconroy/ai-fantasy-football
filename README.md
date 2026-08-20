@@ -193,7 +193,7 @@ independent:
 |---|---|
 | **Boris Chen** | Default. Public CSVs, no key. |
 | **Sleeper ADP** | Market ADP, no key. |
-| **FantasyPros ECR** | Requires a key entitled to the full rankings API. Public/free keys return only 10 players per position and cannot populate a complete board. Add an eligible `FANTASYPROS_API_KEY` to `.env` and Vercel, then redeploy. |
+| **FantasyPros ECR** | Requires a paid **HOF** key (`API Access` is HOF-only, not MVP). Free/MVP keys return 10 players per position and cannot populate a complete board. Request a key at [secure.fantasypros.com/api-keys/request](https://secure.fantasypros.com/api-keys/request/), set `FANTASYPROS_API_KEY` in `.env` and Vercel, then redeploy. |
 
 ## Public demo
 

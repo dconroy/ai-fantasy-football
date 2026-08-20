@@ -8,9 +8,10 @@ export async function GET() {
   try {
     const all = await listDemoRooms();
     // Rooms someone can still join: not complete and at least one open seat.
-    const joinable = all.filter((room) => !room.complete && room.openSeats > 0);
+    const live = all.filter((room) => !room.complete);
+    const joinable = live.filter((room) => room.openSeats > 0);
     const totalOpenSeats = joinable.reduce((sum, room) => sum + room.openSeats, 0);
-    const activePlayers = all.reduce((sum, room) => sum + room.activeSeats, 0);
+    const activePlayers = live.reduce((sum, room) => sum + room.activeSeats, 0);
     return NextResponse.json({
       totalRooms: all.length,
       joinableRooms: joinable.length,

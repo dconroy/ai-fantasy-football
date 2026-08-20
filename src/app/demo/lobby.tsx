@@ -73,6 +73,7 @@ export function DemoLobby() {
   const [rounds, setRounds] = useState(15);
   const [slot, setSlot] = useState(1);
   const [teamName, setTeamName] = useState("");
+  const [joinNames, setJoinNames] = useState<Record<string, string>>({});
   const [created, setCreated] = useState<CreatedDraft | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -144,7 +145,7 @@ export function DemoLobby() {
         body: JSON.stringify({
           roomId: room.id,
           slot: requestedSlot,
-          displayName: teamName,
+          displayName: joinNames[room.id] ?? "",
         }),
       });
       const body = (await response.json()) as {
@@ -270,15 +271,6 @@ export function DemoLobby() {
           Pick an open seat in a public mock, or choose the scoring, roster count,
           rounds, and draft slot for a new one.
         </p>
-        <label className="demo-name-field">
-          Your team name
-          <input
-            value={teamName}
-            maxLength={32}
-            placeholder="e.g. Cobra Kai"
-            onChange={(event) => setTeamName(event.target.value)}
-          />
-        </label>
       </section>
 
       {notice && <p className="demo-lobby-notice">{notice}</p>}
@@ -323,30 +315,46 @@ export function DemoLobby() {
                   </div>
                   <div className="demo-room-actions">
                     {!room.complete && (
-                      <label>
-                        Seat
-                        <select
-                          value={seats[room.id] ?? room.openSeatList[0] ?? ""}
-                          onChange={(event) =>
-                            setSeats((previous) => ({
-                              ...previous,
-                              [room.id]: Number(event.target.value),
-                            }))
-                          }
-                        >
-                          {room.openSeatList.map((openSlot) => (
-                            <option key={openSlot} value={openSlot}>
-                              Slot {openSlot}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <>
+                        <label>
+                          Team name
+                          <input
+                            value={joinNames[room.id] ?? ""}
+                            maxLength={32}
+                            placeholder="Your team"
+                            onChange={(event) =>
+                              setJoinNames((previous) => ({
+                                ...previous,
+                                [room.id]: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Seat
+                          <select
+                            value={seats[room.id] ?? room.openSeatList[0] ?? ""}
+                            onChange={(event) =>
+                              setSeats((previous) => ({
+                                ...previous,
+                                [room.id]: Number(event.target.value),
+                              }))
+                            }
+                          >
+                            {room.openSeatList.map((openSlot) => (
+                              <option key={openSlot} value={openSlot}>
+                                Slot {openSlot}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </>
                     )}
                     <button
                       type="button"
                       disabled={
                         busy ||
-                        teamName.trim().length < 2 ||
+                        (joinNames[room.id] ?? "").trim().length < 2 ||
                         room.complete ||
                         room.openSeatList.length === 0
                       }
@@ -365,6 +373,15 @@ export function DemoLobby() {
           <p className="eyebrow">New room</p>
           <h2>Set up a draft</h2>
           <form onSubmit={(event) => void createRoom(event)}>
+            <label className="demo-create-name">
+              Your team name
+              <input
+                value={teamName}
+                maxLength={32}
+                placeholder="e.g. Cobra Kai"
+                onChange={(event) => setTeamName(event.target.value)}
+              />
+            </label>
             <label>
               Scoring
               <select

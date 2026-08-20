@@ -77,7 +77,7 @@ Each card has a reason and a score. When in doubt, take #1. “Why #1?” compar
 | Expert | What it is |
 |---|---|
 | **Boris Chen** | Weekly tiers (default). Best if you already trust Chen. |
-| **FantasyPros ECR** | Expert consensus. Shows up when the site has an API key. |
+| **FantasyPros ECR** | Expert consensus. Needs a FantasyPros **HOF** API key (MVP is not enough). |
 | **FF Calculator ADP** | Market ADP, not an analyst. Tiers are grouped from ADP gaps. |
 
 **Scoring** is separate: **0.5 PPR** (default), **PPR**, or **standard**. Switching lists remaps ranks. It does not wipe picks.

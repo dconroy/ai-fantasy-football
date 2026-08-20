@@ -29,6 +29,34 @@ function roomHref(id: string) {
   return `/demo?room=${encodeURIComponent(id)}`;
 }
 
+export function summarizeLiveRooms<T extends Pick<Room, "complete" | "openSeats" | "activeSeats">>(
+  rooms: readonly T[],
+) {
+  const live = rooms.filter((room) => !room.complete);
+  const joinable = live.filter((room) => room.openSeats > 0);
+  const openSeats = joinable.reduce((sum, room) => sum + room.openSeats, 0);
+  const activePlayers = live.reduce((sum, room) => sum + room.activeSeats, 0);
+  const headline =
+    joinable.length > 0
+      ? `${joinable.length} live draft${joinable.length === 1 ? "" : "s"} · ${openSeats} open seat${openSeats === 1 ? "" : "s"}`
+      : live.length > 0
+        ? `${live.length} live draft${live.length === 1 ? "" : "s"} · rooms full`
+        : "No live drafts right now";
+  const emptyPrompt =
+    joinable.length > 0
+      ? null
+      : live.length > 0
+        ? "Rooms are full — start a fresh one to jump in."
+        : "Be the first in the dojo — start a fresh room.";
+  return {
+    joinable,
+    headline,
+    emptyPrompt,
+    activePlayers,
+    cta: joinable.length > 0 ? "Browse live drafts" : "Create a demo draft",
+  };
+}
+
 export function LiveRooms() {
   const [data, setData] = useState<RoomsResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -63,10 +91,7 @@ export function LiveRooms() {
     };
   }, []);
 
-  const joinable = (data?.rooms ?? []).filter(
-    (room) => !room.complete && room.openSeats > 0,
-  );
-  const activePlayers = data?.activePlayers ?? 0;
+  const summary = summarizeLiveRooms(data?.rooms ?? []);
 
   return (
     <section className="live-rooms" aria-live="polite">
@@ -77,18 +102,18 @@ export function LiveRooms() {
             ? "Checking live drafts…"
             : loadError
               ? "Live drafts are temporarily unavailable"
-            : joinable.length === 0
-              ? "No live drafts right now"
-              : `${joinable.length} live draft${joinable.length === 1 ? "" : "s"} · ${data?.totalOpenSeats ?? 0} open seat${data?.totalOpenSeats === 1 ? "" : "s"}`}
+              : summary.headline}
         </span>
-        {activePlayers > 0 && (
-          <span className="live-rooms-players">{activePlayers} drafting now</span>
+        {loaded && !loadError && summary.activePlayers > 0 && (
+          <span className="live-rooms-players">
+            {summary.activePlayers} drafting now
+          </span>
         )}
       </div>
 
-      {joinable.length > 0 ? (
+      {summary.joinable.length > 0 ? (
         <ul className="live-rooms-list">
-          {joinable.map((room) => (
+          {summary.joinable.map((room) => (
             <li key={room.id}>
               <Link className="live-room" href={roomHref(room.id)}>
                 <span className="live-room-name">{room.name}</span>
@@ -107,14 +132,12 @@ export function LiveRooms() {
             </li>
           ))}
         </ul>
-      ) : !loadError ? (
-        <p className="live-rooms-empty">
-          Be the first in the dojo — start a fresh room.
-        </p>
+      ) : !loadError && summary.emptyPrompt ? (
+        <p className="live-rooms-empty">{summary.emptyPrompt}</p>
       ) : null}
 
       <Link className="live-rooms-cta" href="/demo">
-        {joinable.length > 0 ? "Browse live drafts" : "Create a demo draft"} →
+        {summary.cta} →
       </Link>
     </section>
   );
