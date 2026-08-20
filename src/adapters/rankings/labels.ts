@@ -7,3 +7,13 @@ export function sourceFromBoard(
   if (/calculator|ffcalc|adp/i.test(text)) return "ffcalc";
   return "chen";
 }
+
+/** Auto-refresh is Chen-only. Other experts stay until the user switches. */
+export function shouldAutoRefreshChen(
+  source?: string | null,
+  pickCount = 0,
+): boolean {
+  if (pickCount > 0) return false;
+  if (!source || source === "Built-in mock data") return true;
+  return sourceFromBoard(source) === "chen";
+}

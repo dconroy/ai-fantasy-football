@@ -11,6 +11,21 @@ const SCORING: Record<ChenScoring, string> = {
 /** Current FantasyPros public API. The legacy `/v2/json` host rejects keys with 403. */
 const FP_BASE = "https://api.fantasypros.com/public/v2/json";
 const FP_POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"] as const;
+/** Premium keys are 500 req/day and 1/sec. One refresh is 6 calls. */
+const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const STALE_OK_MS = 7 * 24 * 60 * 60 * 1000;
+const LOCK_MS = 2 * 60 * 1000;
+const inflight = new Map<ChenScoring, Promise<ChenImport | null>>();
+/** Draft-useful depth. A 14-team, 16-round board is 224 picks; 1000 names are waste. */
+export const FP_POSITION_CAP: Readonly<Record<string, number>> = {
+  QB: 32,
+  RB: 80,
+  WR: 90,
+  TE: 30,
+  K: 20,
+  DST: 20,
+  DEF: 20,
+};
 
 export interface FpPlayer {
   player_name?: string;
@@ -39,6 +54,14 @@ export function estimatedOverall(position: string, ecr: number): number {
     default:
       return 300 + ecr;
   }
+}
+
+export function capFantasyProsPage(
+  rows: readonly FpPlayer[],
+  position: string,
+): FpPlayer[] {
+  const cap = FP_POSITION_CAP[position] ?? 30;
+  return rows.slice(0, cap);
 }
 
 export function mergeFantasyProsPlayers(
@@ -78,12 +101,50 @@ export function mergeFantasyProsPlayers(
   }));
 }
 
-export async function fetchFantasyProsImport(
+function cacheSourceFor(scoring: ChenScoring) {
+  return `fantasypros-board-${scoring}`;
+}
+
+function lockSourceFor(scoring: ChenScoring) {
+  return `fantasypros-lock-${scoring}`;
+}
+
+async function readCachedImport(
   scoring: ChenScoring,
+  maxAgeMs: number,
 ): Promise<ChenImport | null> {
-  const key = process.env.FANTASYPROS_API_KEY?.trim();
-  if (!key) return null;
-  const cacheSource = `fantasypros-${scoring}`;
+  const cached = await prisma.dataImport.findFirst({
+    where: { source: cacheSourceFor(scoring) },
+    orderBy: { fetchedAt: "desc" },
+  });
+  if (!cached || Date.now() - cached.fetchedAt.getTime() >= maxAgeMs) {
+    return null;
+  }
+  return JSON.parse(cached.payload) as ChenImport;
+}
+
+async function refreshFantasyPros(
+  scoring: ChenScoring,
+  key: string,
+  stale: ChenImport | null,
+): Promise<ChenImport | null> {
+  const lock = await prisma.dataImport.findFirst({
+    where: { source: lockSourceFor(scoring) },
+    orderBy: { fetchedAt: "desc" },
+  });
+  if (lock && Date.now() - lock.fetchedAt.getTime() < LOCK_MS) {
+    return stale ?? (await readCachedImport(scoring, STALE_OK_MS));
+  }
+  await prisma.dataImport
+    .create({
+      data: {
+        source: lockSourceFor(scoring),
+        playerCount: 0,
+        payload: "{}",
+      },
+    })
+    .catch(() => undefined);
+
   const year = new Date().getUTCFullYear();
   const scoringCode = SCORING[scoring];
   try {
@@ -114,10 +175,10 @@ export async function fetchFantasyProsImport(
         );
       }
       const body = (await response.json()) as { players?: FpPlayer[] };
-      pages.push(body.players ?? []);
+      pages.push(capFantasyProsPage(body.players ?? [], position));
     }
     const players = mergeFantasyProsPlayers(pages.flat());
-    if (players.length === 0) return null;
+    if (players.length === 0) return stale;
     const imported: ChenImport = {
       players,
       importedAt: new Date().toISOString(),
@@ -128,7 +189,7 @@ export async function fetchFantasyProsImport(
     await prisma.dataImport
       .create({
         data: {
-          source: cacheSource,
+          source: cacheSourceFor(scoring),
           playerCount: players.length,
           payload: JSON.stringify(imported),
         },
@@ -136,11 +197,26 @@ export async function fetchFantasyProsImport(
       .catch(() => undefined);
     return imported;
   } catch (error) {
-    const cached = await prisma.dataImport.findFirst({
-      where: { source: cacheSource },
-      orderBy: { fetchedAt: "desc" },
-    });
-    if (!cached) throw error;
-    return JSON.parse(cached.payload) as ChenImport;
+    if (stale) return stale;
+    throw error;
   }
+}
+
+export async function fetchFantasyProsImport(
+  scoring: ChenScoring,
+): Promise<ChenImport | null> {
+  const key = process.env.FANTASYPROS_API_KEY?.trim();
+  if (!key) return null;
+  const pending = inflight.get(scoring);
+  if (pending) return pending;
+  const run = (async () => {
+    const fresh = await readCachedImport(scoring, CACHE_MAX_AGE_MS);
+    if (fresh) return fresh;
+    const stale = await readCachedImport(scoring, STALE_OK_MS);
+    return refreshFantasyPros(scoring, key, stale);
+  })().finally(() => {
+    inflight.delete(scoring);
+  });
+  inflight.set(scoring, run);
+  return run;
 }

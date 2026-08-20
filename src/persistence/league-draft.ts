@@ -15,6 +15,7 @@ import {
   type ChenScoring,
 } from "@/adapters/chen/boris-chen";
 import { getFreshChenImport } from "@/adapters/chen/server-cache";
+import { shouldAutoRefreshChen } from "@/adapters/rankings/labels";
 import {
   getPlayerMetaIndex,
   playerMetaKey,
@@ -144,7 +145,7 @@ export async function ensureFreshBoardPlayers(
   lastFreshnessCheck = Date.now();
   try {
     const current = await getOrCreateLeagueDraft(draftId);
-    if (current.picks.length > 0) return;
+    if (!shouldAutoRefreshChen(current.source, current.picks.length)) return;
     const isSynthetic = current.source === "Built-in mock data";
     const scoring = scoringFromSource(current.source);
     const fresh = isSynthetic

@@ -1073,24 +1073,6 @@ export function DraftAssistant({
     }
   }
 
-  async function markDrafted(player: Player) {
-    if (leagueKey.startsWith("mock.")) {
-      if (isMyTurn) {
-        await confirm(player);
-        return;
-      }
-      setNotice(
-        "In a practice mock the robots record other seats. Use Confirm on your turn.",
-      );
-      return;
-    }
-    await mutateDraft(
-      "/api/draft/pick",
-      { playerId: player.id },
-      `Recorded ${player.name} at pick ${current.overall}.`,
-    );
-  }
-
   async function simulateToTurn() {
     if (state.mode !== "mock") {
       setNotice("Simulation is disabled on the live draft board.");
@@ -2324,12 +2306,6 @@ export function DraftAssistant({
                   </button>
                   <button onClick={(event) => { event.stopPropagation(); toggleList("avoids", player.id); }}>
                     {avoids.includes(player.id) ? "Allow" : "Avoid"}
-                  </button>
-                  <button
-                    disabled={draftedIds.has(player.id)}
-                    onClick={(event) => { event.stopPropagation(); markDrafted(player); }}
-                  >
-                    {draftedIds.has(player.id) ? "Taken" : "Drafted"}
                   </button>
                 </span>
               </div>

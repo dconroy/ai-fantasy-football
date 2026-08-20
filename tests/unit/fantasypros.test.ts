@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  capFantasyProsPage,
   estimatedOverall,
   mergeFantasyProsPlayers,
 } from "../../src/adapters/rankings/fantasypros";
@@ -25,6 +26,16 @@ describe("FantasyPros public rankings merge", () => {
     expect(players.find((player) => player.position === "DEF")?.name).toBe(
       "Houston Texans",
     );
+  });
+
+  it("keeps a draft-sized slice instead of the full 300-deep position lists", () => {
+    const rows = Array.from({ length: 200 }, (_, index) => ({
+      player_name: `WR ${index + 1}`,
+      player_position_id: "WR",
+      rank_ecr: index + 1,
+    }));
+    expect(capFantasyProsPage(rows, "WR")).toHaveLength(90);
+    expect(capFantasyProsPage(rows, "K")).toHaveLength(20);
   });
 
   it("keeps kickers and defenses behind skill starters", () => {

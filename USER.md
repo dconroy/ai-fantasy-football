@@ -88,7 +88,7 @@ If a mock sits overnight and your last pick is already in, Top five still shows 
 
 ## You’re on the clock
 
-The top bar turns green and the tab flashes 🚨. Confirm the green button, or the ✓ next to any player.
+The top bar turns green and the tab flashes 🚨. Confirm the green button on your turn.
 
 That confirm is **local** — it records the pick on this board. In a live Sleeper or Yahoo draft, also click the player in that app. The footer reminder is there on purpose.
 
